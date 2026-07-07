@@ -1,9 +1,9 @@
-# METRO AI 🚀
+# METRO AI
 ### **M**oney **E**xchange & **T**ransfer **R**outing **O**ptimizer
 
 ---
 
-## 📖 Executive Summary
+## Executive Summary
 
 **METRO AI** is an intelligent, production-grade cross-border remittance aggregator and market-timing platform engineered to optimize international wealth distribution. 
 
@@ -11,7 +11,7 @@ Unlike generic fintech tools that obscure true markup percentages behind short-l
 
 ---
 
-## 🏗️ Technical Architecture & Core Design Decisions
+## Technical Architecture & Core Design Decisions
 
 This system is built from the ground up prioritizing scalability, performance isolation, and clean software engineering principles:
 
@@ -22,7 +22,7 @@ This system is built from the ground up prioritizing scalability, performance is
 
 ---
 
-## 🗂️ Repository Directory Structure
+## Repository Directory Structure
 
 ```text
 ├── docs/                 # Core system documentation and specifications
