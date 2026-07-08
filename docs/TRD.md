@@ -31,8 +31,9 @@ METRO AI utilizes a fully decoupled, micro-services-ready architecture designed 
      │  PostgreSQL Database     │    │  Redis In-Memory Cache   │    │   Multi-Agent AI Engine  │
      │  (ACID User & Meta Data) │    │  (Rate TTL / Rate Limit) │    │ (LangGraph / Struct Out) │
      └──────────────────────────┘    └──────────────────────────┘    └──────────────────────────┘
-
+```
 ---
+
 
 1.1 Interface Layer (Frontend) Technology Stack: React, **HTML5**, Tailwind **CSS**.
 
@@ -61,14 +62,14 @@ Fetching foreign exchange rates from multiple external digital platforms simulta
 Time-To-Live (**TTL**): **900** seconds (15 minutes). Exchange corridors do not undergo dramatic minute-by-minute shifts in retail remittance spaces; a 15-minute window protects external **API** consumer limits while ensuring fresh data.
 
 Key Namespacing Scheme: rates:{base_currency}:{target_currency} (e.g., rates:**CAD**:**INR**).
-
+```text
 Plaintext
 User Request ──► Check Redis Cache ─┬─► [Cache Hit] ──► Return In-Memory **JSON** (1ms)
     │
     └─► [Cache Miss] ─► Async Scrape ──► Seed Redis (**TTL** 15m) ──► Return (800ms)
 ## RESTful API Endpoint Specification
 All **API** communication must be strictly versioned (/api/v1) and pass data strictly inside **JSON** standard schemas.
-
+```
 3.1 Live Aggregator Rates Endpoint: **GET** /api/v1/rates/live
 
 Query Parameters:
@@ -82,6 +83,7 @@ amount (float, required, e.g., **1000**.00)
 Response Payload Example (**200** OK):
 
 **JSON**
+```
 {
     *timestamp*: ***2026**-07-**08T03**:22:**00Z***,
     *source_currency*: *CAD*,
@@ -107,6 +109,7 @@ Response Payload Example (**200** OK):
     }
     ]
 }
+```
 3.2 AI Forecast & Market Timing
 Endpoint: **GET** /api/v1/ai/forecast
 
@@ -117,6 +120,7 @@ pair (string, required, e.g., *CAD_INR*)
 Response Payload Example (**200** OK):
 
 **JSON**
+```
 {
     *currency_pair*: *CAD_INR*,
     *generated_at*: ***2026**-07-**08T01**:00:**00Z***,
@@ -125,9 +129,10 @@ Response Payload Example (**200** OK):
     *confidence_score*: 0.88,
     *analysis_summary*: "The Bank of Canada hints at an impending interest rate hike tomorrow. Historical trends show this correlates with a 0.5-1.2% strengthening of **CAD** against **INR** within 48 hours. Suggest delaying larger transfers until Friday."
 }
+```
 ## Relational Database Schema Design (PostgreSQL)
 To preserve transactional integrity for user accounts, profile definitions, and historical alert settings, the physical schema enforces strict relational constraints and indexing.
-
+```
 Plaintext
     ┌────────────────────────┐             ┌────────────────────────┐
     │         users          │             │    user_preferences    │
@@ -137,6 +142,7 @@ Plaintext
     │     password_hash (VC) │             │     base_ccy (**VARCHAR**) │
     │     created_at (TS)    │             │     target_ccy (**VARCHAR**)│
     └────────────────────────┘             └────────────────────────┘
+```
 4.1 Table: users
 Tracks unique corporate authentication accounts.
 
