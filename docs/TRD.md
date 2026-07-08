@@ -1,17 +1,33 @@
 # Technical Requirements Document (TRD) 🛠️
-## Project: METRO AI
+## Project: METRO AI (Money Exchange & Transfer Routing Optimizer)
+**Author:** Kush Gupta  
+**Status:** Architecture Draft (Phase 1)
 
-This document details the system architecture, database specifications, API routing schema, and algorithmic logic supporting the METRO AI remittance aggregator.
+This document establishes the definitive technical specifications, architectural designs, data models, and system boundaries for the METRO AI remittance aggregator platform.
 
 ---
 
-## 1. System Architecture (Decoupled Design)
+## 1. System Architecture & Component Breakdown
 
-The system utilizes a fully decoupled modern web stack architecture, prioritizing performance isolation and horizontal scalability.
+METRO AI utilizes a fully decoupled, micro-services-ready architecture designed to maximize horizontal scalability, minimize user-facing latency, and handle I/O-bound tasks concurrently.
 
 ```text
-[ React Frontend (UI) ] ──(HTTP/JSON)──> [ FastAPI Backend (API) ] ───┬──> [ PostgreSQL DB ]
-                                                                      │
-                                                                      ├──> [ Redis (Caching) ]
-                                                                      │
-                                                                      └──> [ Multi-Agent AI (LLM) ]
+                                 ┌──────────────────────────────────┐
+                                 │       React Frontend (UI)        │
+                                 │ (Stateless SPA / Component-Driven)│
+                                 └─────────────────┬────────────────┘
+                                                   │
+                                            HTTPS / JSON
+                                                   │
+                                                   ▼
+                                 ┌──────────────────────────────────┐
+                                 │     FastAPI Gateway Backend      │
+                                 │     (Asynchronous ASGI Loop)     │
+                                 └───────┬─────────┬─────────┬──────┘
+                                         │         │         │
+                   ┌─────────────────────┘         │         └─────────────────────┐
+                   ▼                               ▼                               ▼
+     ┌──────────────────────────┐    ┌──────────────────────────┐    ┌──────────────────────────┐
+     │  PostgreSQL Database     │    │  Redis In-Memory Cache   │    │   Multi-Agent AI Engine  │
+     │  (ACID User & Meta Data) │    │  (Rate TTL / Rate Limit) │    │ (LangGraph / Struct Out) │
+     └──────────────────────────┘    └──────────────────────────┘    └──────────────────────────┘
