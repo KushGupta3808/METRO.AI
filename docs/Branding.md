@@ -2,7 +2,7 @@
 ## Project: METRO AI
 
 <p align="center">
-  <img src="assets/logo.png" alt="METRO AI Logo" width="500"/>
+  <img src="assets/Logo.png" alt="METRO AI Logo" width="500"/>
 </p>
 
 Building an international remittance aggregator requires establishing absolute **institutional trust**. Users are navigating complex, high-stakes cross-border transfers; therefore, the visual identity must feel secure, analytical, and highly professional. METRO AI intentionally rejects volatile "crypto-style" aesthetics in favor of clean, tier-one fintech design principles.
