@@ -6,9 +6,54 @@ import httpx
 
 app = FastAPI(
     title="METRO AI API",
-    description="Money Exchange & Transfer Routing Optimizer Engine",
-    version="1.4.0"
+    description="Money Exchange & Transfer Routing Optimizer Engine (Global Production Engine)",
+    version="2.0.0"
 )
+
+# --- GLOBAL PROVIDER REGISTRY MATRIX ---
+# To add more apps in the future, simply drop a new block into this array!
+PROVIDERS_CONFIG = [
+    {
+        "name": "Wise",
+        "supported_payouts": ["bank"],
+        "bank_margin": 0.003,      # 0.3% fee spread
+        "cash_margin": 0.0,
+        "bank_fee": 2.99,
+        "cash_fee": 0.0,
+        "bank_days": 1,
+        "cash_days": 0
+    },
+    {
+        "name": "Remitly",
+        "supported_payouts": ["bank", "cash"],
+        "bank_margin": 0.009,      # 0.9% fee spread
+        "cash_margin": 0.012,     # 1.2% fee spread for cash
+        "bank_fee": 0.00,          # Handled conditionally in loop if amount < 1000
+        "cash_fee": 3.99,
+        "bank_days": 2,
+        "cash_days": 0
+    },
+    {
+        "name": "WorldRemit",
+        "supported_payouts": ["bank", "cash"],
+        "bank_margin": 0.008,      # 0.8% spread
+        "cash_margin": 0.015,      # 1.5% spread
+        "bank_fee": 3.99,
+        "cash_fee": 4.99,
+        "bank_days": 1,
+        "cash_days": 0
+    },
+    {
+        "name": "Western Union",
+        "supported_payouts": ["bank", "cash"],
+        "bank_margin": 0.015,      # 1.5% spread
+        "cash_margin": 0.022,      # 2.2% retail network spread
+        "bank_fee": 4.99,
+        "cash_fee": 1.99,
+        "bank_days": 3,
+        "cash_days": 0
+    }
+]
 
 class ProviderRateResult(BaseModel):
     provider_name: str
@@ -28,61 +73,36 @@ class GlobalComparisonResponse(BaseModel):
     base_amount: float
     payout_method_selected: str
     timestamp: str
-    ai_recommendation: str  # DYNAMIC: FORCE_SEND, SEND, HOLD, WAIT
-    ai_analysis_summary: str # DYNAMIC: Real-time contextual text
+    ai_recommendation: str
+    ai_analysis_summary: str
     routes: List[ProviderRateResult]
 
 
-# --- INTERNAL AI ANALYTICS ENGINE ---
-def generate_ai_insight(source: str, target: str, current_rate: float) -> tuple[str, str]:
-    """
-    Analyzes live market rate positions against historical resistance baselines 
-    to generate real-time actionable recommendations.
-    """
-    # Baseline benchmarks for key corridors (e.g., typical CAD to INR trends around 61.0 - 62.0)
-    # If a corridor isn't mapped, we create a dynamic baseline
-    baselines = {
-        ("CAD", "INR"): 61.50,
-        ("USD", "EUR"): 0.92,
-        ("CAD", "EUR"): 0.68
-    }
-    
-    baseline = baselines.get((source, target), current_rate * 0.98)
-    variance_pct = ((current_rate - baseline) / baseline) * 100
+# --- DYNAMIC CURRENCY-AGNOSTIC AI ANALYTICS ---
+def generate_ai_insight(source: str, target: str, current_rate: float, baseline_rate: float) -> tuple[str, str]:
+    """Evaluates momentum based on genuine historical lookbacks instead of hardcoded numbers."""
+    variance_pct = ((current_rate - baseline_rate) / baseline_rate) * 100
 
-    if variance_pct > 2.5:
+    if variance_pct > 2.0:
         recommendation = "FORCE_SEND"
-        summary = (
-            f"AI Analysis: The live mid-market rate ({round(current_rate, 4)}) is running significantly higher "
-            f"(+{round(variance_pct, 2)}%) than the historical 30-day registry baseline of {baseline}. "
-            f"This represents a premium liquidity window. Highly recommended to lock in transfers immediately."
-        )
+        summary = f"AI Analysis: The current {source}/{target} exchange rate ({round(current_rate, 4)}) is highly extended (+{round(variance_pct, 2)}%) above its 30-day historical baseline of {round(baseline_rate, 4)}. Capitalize on this premium conversion window."
     elif variance_pct >= 0.0:
         recommendation = "SEND"
-        summary = (
-            f"AI Analysis: Rates are stable. Current market pricing index of {round(current_rate, 4)} sits comfortably "
-            f"at or slightly above baseline markers. Spreads across digital providers are competitive."
-        )
+        summary = f"AI Analysis: Market conditions stable. The current market pricing index of {round(current_rate, 4)} matches or slightly exceeds standard 30-day target baselines. Spreads are highly competitive."
     elif variance_pct > -2.0:
         recommendation = "HOLD"
-        summary = (
-            f"AI Analysis: Minor market pullback detected. Current rate is -{round(abs(variance_pct), 2)}% below recent "
-            f"resistance peaks. If your transfer is not urgent, consider holding 24-48 hours for a momentum correction."
-        )
+        summary = f"AI Analysis: Minor macro correction occurring. Current rate is sitting -{round(abs(variance_pct), 2)}% below normal monthly resistance levels. If non-urgent, defer transfer to capture rebound momentum."
     else:
         recommendation = "WAIT"
-        summary = (
-            f"AI Analysis: Heavy macro resistance. Market tracking indicates an adverse dip of {round(variance_pct, 2)}%. "
-            f"Pumping funds through right now exposes your capital to high systemic margin losses. Defer transfer if possible."
-        )
+        summary = f"AI Analysis: Adverse volatility spike detected. Current values are depressed by {round(variance_pct, 2)}% relative to monthly benchmarks. Avoid processing capital volume under these heavy market margin drops."
         
     return recommendation, summary
 
 
 @app.get("/api/v1/compare", response_model=GlobalComparisonResponse)
 async def compare_rates(
-    source: str = Query(..., min_length=3, max_length=3, description="Source currency, e.g., CAD"),
-    target: str = Query(..., min_length=3, max_length=3, description="Target currency, e.g., INR"),
+    source: str = Query(..., min_length=3, max_length=3, description="Source currency, e.g., CAD, USD, GBP"),
+    target: str = Query(..., min_length=3, max_length=3, description="Target currency, e.g., INR, EUR, JPY"),
     amount: float = Query(..., gt=0, description="Amount to transfer"),
     payout_method: str = Query("bank", description="Fulfillment: 'bank' or 'cash'")
 ):
@@ -91,80 +111,85 @@ async def compare_rates(
     payout_method = payout_method.lower()
     
     if payout_method not in ["bank", "cash"]:
-        raise HTTPException(status_code=400, detail="Invalid payout method. Choose 'bank' or 'cash'.")
-    
-    # Fetch live mid-market data
-    if source == target:
-        live_mid_market_rate = 1.0
-    else:
-        async with httpx.AsyncClient() as client:
-            try:
-                url = f"https://api.frankfurter.dev/v1/latest?base={source}&symbols={target}"
-                response = await client.get(url, timeout=4.0)
-                if response.status_code == 200:
-                    data = response.json()
-                    live_mid_market_rate = data["rates"][target]
-                else:
-                    raise HTTPException(status_code=400, detail=f"Currency pair {source} to {target} not supported.")
-            except httpx.RequestError:
-                live_mid_market_rate = 67.32 if (source == "CAD" and target == "INR") else 1.0
+        raise HTTPException(status_code=400, detail="Invalid payout method. Select 'bank' or 'cash'.")
 
-    # 1. Fire our dynamic intelligence layer using the fresh live rate
-    ai_rec, ai_sum = generate_ai_insight(source, target, live_mid_market_rate)
+    # Determine dynamic historical date strings for lookback queries (30 days ago)
+    today = datetime.date.today()
+    past_date = today - datetime.timedelta(days=30)
+    past_date_str = past_date.isoformat()
+
+    live_mid_market_rate = 1.0
+    historical_baseline_rate = 1.0
+
+    if source != target:
+        async with httpx.AsyncClient() as client:
+            # Task 1: Fetch Live Current Rates
+            try:
+                url_live = f"https://api.frankfurter.dev/v1/latest?base={source}&symbols={target}"
+                res_live = await client.get(url_live, timeout=4.0)
+                if res_live.status_code == 200:
+                    live_mid_market_rate = res_live.json()["rates"][target]
+                else:
+                    raise HTTPException(status_code=400, detail=f"Currency pair {source} to {target} not supported by market registries.")
+            except httpx.RequestError:
+                raise HTTPException(status_code=503, detail="Global currency network Registry currently unreachable.")
+
+            # Task 2: Fetch Live Historical Baseline 30 Days Ago for this exact pair
+            try:
+                url_hist = f"https://api.frankfurter.dev/v1/{past_date_str}?base={source}&symbols={target}"
+                res_hist = await client.get(url_hist, timeout=4.0)
+                if res_hist.status_code == 200:
+                    historical_baseline_rate = res_hist.json()["rates"][target]
+                else:
+                    historical_baseline_rate = live_mid_market_rate  # Safe fallback if weekend adjustments glitch
+            except httpx.RequestError:
+                historical_baseline_rate = live_mid_market_rate
+
+    # Generate genuine dynamic AI insights
+    ai_rec, ai_sum = generate_ai_insight(source, target, live_mid_market_rate, historical_baseline_rate)
 
     is_large_transfer = amount >= 10000.0
-    warning_text = f"Large transfer threshold exceeded for {source}. Verification compliance required." if is_large_transfer else None
+    warning_text = f"Large volume threshold reached for {source}. Strict verification required." if is_large_transfer else None
 
+    # --- DYNAMIC PROCESSING MATRIX LOOP ---
     routes = []
+    for provider in PROVIDERS_CONFIG:
+        # Skip app completely if it doesn't offer the requested payout system (like Wise for cash)
+        if payout_method not in provider["supported_payouts"]:
+            continue
 
-    # --- PROVIDER 1: WISE (Bank Only) ---
-    if payout_method == "bank":
-        wise_rate = live_mid_market_rate * 0.997
-        wise_fee = 2.99
-        wise_delivery = (amount - wise_fee) * wise_rate
+        # Extract context attributes dynamically
+        if payout_method == "bank":
+            margin = provider["bank_margin"]
+            days = provider["bank_days"]
+            # Apply dynamic custom fee structures (like Remitly's waiver rule)
+            if provider["name"] == "Remitly":
+                fee = 0.00 if amount >= 1000.0 else 4.99
+            else:
+                fee = provider["bank_fee"]
+        else:
+            margin = provider["cash_margin"]
+            days = provider["cash_days"]
+            fee = provider["cash_fee"]
+
+        # Run financial execution equations
+        effective_exchange_rate = live_mid_market_rate * (1.0 - margin)
+        total_delivery_amount = (amount - fee) * effective_exchange_rate
+
         routes.append(ProviderRateResult(
-            provider_name="Wise", payout_method="bank", exchange_rate=round(wise_rate, 4),
-            mid_market_rate=round(live_mid_market_rate, 4), margin_percentage=0.3, fixed_fee=wise_fee,
-            transfer_time_days=1, total_delivery_amount=round(max(0.0, wise_delivery), 2),
-            requires_kyc_verification=is_large_transfer, regulatory_warning=warning_text
+            provider_name=provider["name"],
+            payout_method=payout_method,
+            exchange_rate=round(effective_exchange_rate, 4),
+            mid_market_rate=round(live_mid_market_rate, 4),
+            margin_percentage=round(margin * 100, 2),
+            fixed_fee=fee,
+            transfer_time_days=days,
+            total_delivery_amount=round(max(0.0, total_delivery_amount), 2),
+            requires_kyc_verification=is_large_transfer,
+            regulatory_warning=warning_text
         ))
 
-    # --- PROVIDER 2: REMITLY ---
-    remitly_rate = live_mid_market_rate * (0.988 if payout_method == "cash" else 0.991)
-    remitly_fee = 3.99 if payout_method == "cash" else (0.00 if amount >= 1000 else 4.99)
-    remitly_delivery = (amount - remitly_fee) * remitly_rate
-    routes.append(ProviderRateResult(
-        provider_name="Remitly", payout_method=payout_method, exchange_rate=round(remitly_rate, 4),
-        mid_market_rate=round(live_mid_market_rate, 4), margin_percentage=1.2 if payout_method == "cash" else 0.9,
-        fixed_fee=remitly_fee, transfer_time_days=0 if payout_method == "cash" else 2,
-        total_delivery_amount=round(max(0.0, remitly_delivery), 2), requires_kyc_verification=is_large_transfer,
-        regulatory_warning=warning_text
-    ))
-
-    # --- PROVIDER 3: WORLDREMIT ---
-    world_rate = live_mid_market_rate * (0.985 if payout_method == "cash" else 0.992)
-    world_fee = 4.99 if payout_method == "cash" else 3.99
-    world_delivery = (amount - world_fee) * world_rate
-    routes.append(ProviderRateResult(
-        provider_name="WorldRemit", payout_method=payout_method, exchange_rate=round(world_rate, 4),
-        mid_market_rate=round(live_mid_market_rate, 4), margin_percentage=1.5 if payout_method == "cash" else 0.8,
-        fixed_fee=world_fee, transfer_time_days=0 if payout_method == "cash" else 1,
-        total_delivery_amount=round(max(0.0, world_delivery), 2), requires_kyc_verification=is_large_transfer,
-        regulatory_warning=warning_text
-    ))
-
-    # --- PROVIDER 4: WESTERN UNION ---
-    wu_rate = live_mid_market_rate * (0.978 if payout_method == "cash" else 0.985)
-    wu_fee = 1.99 if payout_method == "cash" else 4.99
-    wu_delivery = (amount - wu_fee) * wu_rate
-    routes.append(ProviderRateResult(
-        provider_name="Western Union", payout_method=payout_method, exchange_rate=round(wu_rate, 4),
-        mid_market_rate=round(live_mid_market_rate, 4), margin_percentage=2.2 if payout_method == "cash" else 1.5,
-        fixed_fee=wu_fee, transfer_time_days=0 if payout_method == "cash" else 3,
-        total_delivery_amount=round(max(0.0, wu_delivery), 2), requires_kyc_verification=is_large_transfer,
-        regulatory_warning=warning_text
-    ))
-
+    # Re-rank providers dynamically based on highest final payout value
     routes.sort(key=lambda x: x.total_delivery_amount, reverse=True)
 
     return GlobalComparisonResponse(
