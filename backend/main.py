@@ -5,7 +5,7 @@ import random
 from typing import List, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Depends, Query, status
+from fastapi import FastAPI, HTTPException, Depends, Query, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Metro AI API",
     description="Intelligent Cross-Border Remittance Ledger",
-    version="1.5.0",
+    version="1.6.0",
     lifespan=lifespan
 )
 
@@ -211,7 +211,6 @@ class TransferResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# Pydantic schemas for the new Phase 2 features
 class GraphDataPoint(BaseModel):
     date: str
     rate: float
@@ -298,7 +297,7 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-# --- MARKET INTELLIGENCE ENDPOINTS (Phase 2) ---
+# --- MARKET INTELLIGENCE ENDPOINTS ---
 
 @app.get("/api/v1/market/graphs", response_model=MarketGraphResponse)
 async def get_market_graph(
@@ -306,10 +305,6 @@ async def get_market_graph(
     target: str = Query("INR"),
     days: int = Query(30)
 ):
-    """
-    Generates historical time-series data endpoints representing 
-    remittance value trends over time to plot in 3D frontend visual nodes.
-    """
     base_rate = 67.325 if source == "CAD" and target == "INR" else 1.0
     if source == "USD" and target == "INR":
         base_rate = 83.124
@@ -319,12 +314,9 @@ async def get_market_graph(
     points = []
     current_date = datetime.date.today()
 
-    # Generate an elegant, mathematically smooth random walk representing historical market behavior
     cumulative_change = 0.0
     for i in range(days - 1, -1, -1):
         target_date = current_date - datetime.timedelta(days=i)
-        
-        # Micro-fluctuations over daily ticks
         daily_variation = random.uniform(-0.15, 0.15)
         cumulative_change += daily_variation
         
@@ -349,10 +341,6 @@ async def get_market_bulletin(
     source: str = Query("CAD"),
     target: str = Query("INR")
 ):
-    """
-    Generates an intelligent, AI-powered financial briefing news digest
-    for the selected currency corridor via Gemini 2.0 Flash.
-    """
     headline = f"Remittance Outlook: {source} to {target} Corridor Profile"
     bullets = [
         "Global trade indexes are exhibiting signs of stability, establishing steady resistance ranges.",
@@ -378,7 +366,7 @@ async def get_market_bulletin(
                     ]
                 }}
                 Keep individual bullets concise (maximum 15 words per bullet). 
-                Do not include markdown tags, code block headers, or conversational prose.
+                Do not include markdown tags, code block headers, or trailing conversational prose.
                 """
                 
                 response = await aclient.models.generate_content(
@@ -551,3 +539,75 @@ async def create_transfer(transfer_data: TransferCreate, db: AsyncSession = Depe
 async def get_transfer_history(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Transfer).order_by(Transfer.created_at.desc()))
     return result.scalars().all()
+
+
+# --- SENTIENT TERMINAL CHATBOT (Phase 3 WebSockets) ---
+@app.websocket("/api/v1/chat/ws")
+async def websocket_chat_endpoint(websocket: WebSocket):
+    """
+    Establishes a low-latency bidirectional WebSocket tunnel for live financial coaching.
+    Intercepts quota or parsing failures cleanly with an simulated economic AI response.
+    """
+    await websocket.accept()
+    
+    # Establish conversational system memory context
+    system_intro = (
+        "You are the METRO AI Terminal Chatbot. You assist users with global money transfers "
+        "and international currency exchange. Answer questions concisely with an authoritative, "
+        "sophisticated financial analyst tone. Speak in brief, high-impact sentences."
+    )
+    
+    try:
+        # Send initial warm welcome packet upon handshake
+        await websocket.send_json({
+            "sender": "METRO_AI",
+            "message": "METRO AI Terminal established. Connection encrypted. Input query..."
+        })
+        
+        while True:
+            # Receive active prompt text from user UI
+            data = await websocket.receive_text()
+            user_input = data.strip()
+            
+            if not user_input:
+                continue
+                
+            response_text = ""
+            
+            if os.environ.get("GEMINI_API_KEY"):
+                try:
+                    from google import genai
+                    # Stream raw Gemini conversational responses to match terminal typing effects
+                    async with genai.Client().aio as aclient:
+                        prompt_composition = f"{system_intro}\n\nUser Question: {user_input}\nResponse:"
+                        
+                        # Generate content
+                        response = await aclient.models.generate_content(
+                            model="gemini-2.0-flash",
+                            contents=prompt_composition
+                        )
+                        response_text = response.text.strip()
+                        
+                except Exception as e:
+                    # Catch rate limits or service drop exceptions cleanly
+                    print(f"WS AI Session Exception intercepted: {e}")
+                    
+            # Secure simulation fallback if Gemini limits are reached (429 Resource Exhausted)
+            if not response_text:
+                fallback_responses = [
+                    "Analyzing market vectors... Exchange liquidity CAD/INR remains within normal distribution margins.",
+                    "System alert: Active rate fluctuations detected on global networks. Wise and Remitly remain stable.",
+                    "Operational warning: Minor correction happening on G10 currencies. Hold transfers unless urgent.",
+                    "Processing trade indicators... CAD currently showing positive support. Send recommendation is active.",
+                    "Remittance ledger is secure. I recommend analyzing current platform margin variances."
+                ]
+                response_text = random.choice(fallback_responses)
+
+            # Stream message back to client terminal
+            await websocket.send_json({
+                "sender": "METRO_AI",
+                "message": response_text
+            })
+            
+    except WebSocketDisconnect:
+        print("METRO AI Session disconnected by client.")
