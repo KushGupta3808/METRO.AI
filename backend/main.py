@@ -1,7 +1,7 @@
 import json
 import os
 import datetime
-import re
+import random
 from typing import List, Optional
 from contextlib import asynccontextmanager
 
@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 
-# Pure Native Security Modules (Replacing Passlib)
+# Pure Native Security Modules
 import bcrypt
 import jwt
 
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Metro AI API",
     description="Intelligent Cross-Border Remittance Ledger",
-    version="1.4.1",
+    version="1.5.0",
     lifespan=lifespan
 )
 
@@ -68,21 +68,15 @@ async def get_db():
             await session.close()
 
 # ---------------------------------------------------------
-# 2. SECURITY UTILITIES (Using Pure Bcrypt)
+# 2. SECURITY UTILITIES
 # ---------------------------------------------------------
 def get_password_hash(password: str) -> str:
-    """
-    Hashes a plain-text password securely using native bcrypt.
-    """
     password_bytes = password.encode('utf-8')
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password_bytes, salt)
     return hashed.decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Verifies a plain-text password against a hashed database password.
-    """
     password_bytes = plain_password.encode('utf-8')
     hashed_bytes = hashed_password.encode('utf-8')
     try:
@@ -217,6 +211,24 @@ class TransferResponse(BaseModel):
     class Config:
         from_attributes = True
 
+# Pydantic schemas for the new Phase 2 features
+class GraphDataPoint(BaseModel):
+    date: str
+    rate: float
+
+class MarketGraphResponse(BaseModel):
+    source_currency: str
+    target_currency: str
+    timeframe: str
+    points: List[GraphDataPoint]
+
+class BulletinResponse(BaseModel):
+    source_currency: str
+    target_currency: str
+    timestamp: str
+    headline: str
+    bullets: List[str]
+
 # ---------------------------------------------------------
 # 5. DEPENDENCIES (Protected Route Guard)
 # ---------------------------------------------------------
@@ -247,7 +259,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
 # --- AUTHENTICATION ENDPOINTS ---
 @app.post("/api/v1/auth/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def signup(user: UserCreate, db: AsyncSession = Depends(get_db)):
-    # Check if user already exists
     result = await db.execute(select(User).where(User.email == user.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -284,11 +295,117 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
 
 @app.get("/api/v1/auth/me", response_model=UserResponse)
 async def read_users_me(current_user: User = Depends(get_current_user)):
-    """
-    Test endpoint to verify your JWT token works.
-    Requires a valid Bearer token in the Authorization header.
-    """
     return current_user
+
+
+# --- MARKET INTELLIGENCE ENDPOINTS (Phase 2) ---
+
+@app.get("/api/v1/market/graphs", response_model=MarketGraphResponse)
+async def get_market_graph(
+    source: str = Query("CAD"),
+    target: str = Query("INR"),
+    days: int = Query(30)
+):
+    """
+    Generates historical time-series data endpoints representing 
+    remittance value trends over time to plot in 3D frontend visual nodes.
+    """
+    base_rate = 67.325 if source == "CAD" and target == "INR" else 1.0
+    if source == "USD" and target == "INR":
+        base_rate = 83.124
+    elif source == "GBP" and target == "INR":
+        base_rate = 104.567
+
+    points = []
+    current_date = datetime.date.today()
+
+    # Generate an elegant, mathematically smooth random walk representing historical market behavior
+    cumulative_change = 0.0
+    for i in range(days - 1, -1, -1):
+        target_date = current_date - datetime.timedelta(days=i)
+        
+        # Micro-fluctuations over daily ticks
+        daily_variation = random.uniform(-0.15, 0.15)
+        cumulative_change += daily_variation
+        
+        rate_point = round(base_rate + cumulative_change, 4)
+        points.append(
+            GraphDataPoint(
+                date=target_date.strftime("%Y-%m-%d"),
+                rate=max(0.01, rate_point)
+            )
+        )
+
+    return MarketGraphResponse(
+        source_currency=source,
+        target_currency=target,
+        timeframe=f"{days}d",
+        points=points
+    )
+
+
+@app.get("/api/v1/market/bulletin", response_model=BulletinResponse)
+async def get_market_bulletin(
+    source: str = Query("CAD"),
+    target: str = Query("INR")
+):
+    """
+    Generates an intelligent, AI-powered financial briefing news digest
+    for the selected currency corridor via Gemini 2.0 Flash.
+    """
+    headline = f"Remittance Outlook: {source} to {target} Corridor Profile"
+    bullets = [
+        "Global trade indexes are exhibiting signs of stability, establishing steady resistance ranges.",
+        "Transactional fees across major corridors show downward trajectory due to localized platform competition.",
+        "Macro policy adjustments are subtly shifting the baseline rate margins. Consult with local advisors."
+    ]
+
+    if os.environ.get("GEMINI_API_KEY"):
+        try:
+            from google import genai
+            async with genai.Client().aio as aclient:
+                prompt = f"""
+                You are a senior macro financial analyst for Metro AI. 
+                Draft a remittance bulletin briefing for a customer sending money from {source} to {target}.
+                
+                Respond with a single clean JSON structure containing exactly these two keys:
+                {{
+                    "headline": "A short, sleek, headline representing the macro state of the corridor",
+                    "bullets": [
+                        "Brief economic fact or forecast point 1",
+                        "Brief economic fact or forecast point 2",
+                        "Brief economic fact or forecast point 3"
+                    ]
+                }}
+                Keep individual bullets concise (maximum 15 words per bullet). 
+                Do not include markdown tags, code block headers, or conversational prose.
+                """
+                
+                response = await aclient.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=prompt
+                )
+                
+                clean_text = response.text.strip()
+                bt = "`" * 3
+                if clean_text.startswith(bt):
+                    clean_text = clean_text.replace(f"{bt}json", "").replace(bt, "").strip()
+                
+                bulletin_data = json.loads(clean_text)
+                headline = bulletin_data.get("headline", headline)
+                bullets = bulletin_data.get("bullets", bullets)
+                
+        except Exception as e:
+            print(f"AI Bulletin Generation Failed: {e}")
+
+    return BulletinResponse(
+        source_currency=source,
+        target_currency=target,
+        timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        headline=headline,
+        bullets=bullets
+    )
+
 
 # --- RATE ENGINE ---
 @app.get("/api/v1/compare")
