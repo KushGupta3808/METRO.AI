@@ -10,8 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 
-# Security Modules
-from passlib.context import CryptContext
+# Pure Native Security Modules (Replacing Passlib)
+import bcrypt
 import jwt
 
 # SQLAlchemy 2.0 Async Modules
@@ -29,7 +29,6 @@ SECRET_KEY = "metro-ai-super-secret-jwt-key-replace-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 Days
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 engine = create_async_engine(DATABASE_URL, echo=False)
@@ -40,6 +39,7 @@ class Base(DeclarativeBase):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Automatically creates all registered tables on server startup if they do not exist
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Metro AI API",
     description="Intelligent Cross-Border Remittance Ledger",
-    version="1.4.0",
+    version="1.4.1",
     lifespan=lifespan
 )
 
@@ -68,13 +68,27 @@ async def get_db():
             await session.close()
 
 # ---------------------------------------------------------
-# 2. SECURITY UTILITIES
+# 2. SECURITY UTILITIES (Using Pure Bcrypt)
 # ---------------------------------------------------------
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def get_password_hash(password: str) -> str:
+    """
+    Hashes a plain-text password securely using native bcrypt.
+    """
+    password_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode('utf-8')
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """
+    Verifies a plain-text password against a hashed database password.
+    """
+    password_bytes = plain_password.encode('utf-8')
+    hashed_bytes = hashed_password.encode('utf-8')
+    try:
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
+    except Exception:
+        return False
 
 def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] = None):
     to_encode = data.copy()
@@ -276,7 +290,7 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
     """
     return current_user
 
-# --- RATE ENGINE (Existing) ---
+# --- RATE ENGINE ---
 @app.get("/api/v1/compare")
 async def compare_rates(
     source: str = Query("CAD"),
@@ -387,7 +401,7 @@ async def compare_rates(
     }
 
 
-# --- RECIPIENTS ENDPOINTS (Existing) ---
+# --- RECIPIENTS ENDPOINTS ---
 @app.post("/api/v1/recipients", response_model=RecipientResponse, status_code=201)
 async def create_recipient(recipient: RecipientCreate, db: AsyncSession = Depends(get_db)):
     db_recipient = Recipient(**recipient.model_dump())
@@ -402,7 +416,7 @@ async def list_recipients(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
-# --- TRANSFERS ENDPOINTS (Existing) ---
+# --- TRANSFERS ENDPOINTS ---
 @app.post("/api/v1/transfers", response_model=TransferResponse, status_code=201)
 async def create_transfer(transfer_data: TransferCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Recipient).where(Recipient.id == transfer_data.recipient_id))
