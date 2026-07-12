@@ -1,51 +1,101 @@
-import { motion } from 'framer-motion';
-import { Check } from 'lucide-react';
+import React from 'react';
 
-export default function RouteCard({ route, isBest, isSelected, onSelect }) {
+/**
+ * RouteCard Component - Renders individual remittance channels with
+ * native HTML link navigation to bypass browser popup blockers and overlapping elements.
+ */
+export default function RouteCard({ route, idx, source, target, onSelect }) {
+  // Extract currencies from redirection url as a fallback if props are missing
+  let fallbackSource = source || 'CAD';
+  let fallbackTarget = target || 'INR';
+  
+  if (route.redirection_url) {
+    try {
+      const url = new URL(route.redirection_url);
+      const srcParam = url.searchParams.get('sourceCurrency') || url.searchParams.get('source');
+      const tgtParam = url.searchParams.get('targetCurrency') || url.searchParams.get('target');
+      if (srcParam) fallbackSource = srcParam;
+      if (tgtParam) fallbackTarget = tgtParam;
+    } catch (e) {
+      console.warn("Failed to parse fallback currencies from URL parameters.", e);
+    }
+  }
+
+  const formattedDelivery = route.total_delivery_amount
+    ? route.total_delivery_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '0.00';
+
+  const formattedFee = route.fixed_fee > 0 
+    ? `${route.fixed_fee} ${fallbackSource}` 
+    : 'FREE';
+
+  const handleAnchorClick = (e) => {
+    console.log(`[METRO AI] Direct click registered on: ${route.provider_name}`);
+    console.log(`[METRO AI] Target URL: ${route.redirection_url}`);
+
+    if (!route.redirection_url) {
+      e.preventDefault();
+      console.error("[METRO AI] Redirect failed: redirection_url is missing from route payload.");
+      return;
+    }
+
+    // Call state-management triggers to queue ledger authorization modal
+    if (typeof onSelect === 'function') {
+      onSelect(route);
+    }
+  };
+
   return (
-    <motion.div
-      whileHover={{ y: -4 }}
-      className={`glass-panel p-5 relative cursor-pointer transition-shadow ${
-        isSelected ? 'border-emeraldNeon/50 shadow-glow-emerald' : isBest ? 'border-sapphireNeon/40 shadow-glow-sapphire' : ''
+    <div 
+      className={`p-5 rounded-2xl bg-slate-900/40 border transition-all flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center hover:bg-slate-900/60 w-full relative z-10 ${
+        idx === 0 
+          ? 'border-emerald-500/30 bg-emerald-950/10 shadow-[0_0_20px_rgba(16,185,129,0.05)]' 
+          : 'border-slate-800 bg-slate-900/20'
       }`}
-      onClick={() => onSelect?.(route)}
     >
-      {isBest && !isSelected && (
-        <span className="absolute -top-2.5 left-5 text-[10px] font-mono uppercase tracking-wider bg-sapphireNeon text-void px-2 py-0.5 rounded-full">
-          Best Value
-        </span>
-      )}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="h-9 w-9 rounded-full bg-white/5 flex items-center justify-center font-display text-sm text-slate-200">
-          {route.provider_name?.[0] ?? '?'}
+      <div className="flex flex-col gap-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-md font-black text-white">{route.provider_name}</span>
+          {idx === 0 && (
+            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[10px] font-black tracking-wider uppercase rounded-md border border-emerald-500/20">
+              Top Value
+            </span>
+          )}
         </div>
-        <p className="font-display text-slate-100">{route.provider_name}</p>
+        
+        {/* Metric metadata display */}
+        <div className="flex items-center gap-3 text-xs text-slate-400 mt-1 font-mono">
+          <span>Rate: <strong className="text-white font-bold">{route.exchange_rate}</strong></span>
+          <span>•</span>
+          <span>Fee: <strong className="text-white font-bold">{formattedFee}</strong></span>
+          <span>•</span>
+          <span>Fulfillment: <strong className="text-white font-bold">{route.transfer_time_days}d</strong></span>
+        </div>
       </div>
-      <div className="space-y-1.5 text-sm">
-        <div className="flex justify-between text-slate-400">
-          <span>Exchange rate</span>
-          <span className="font-mono text-slate-200">{route.exchange_rate}</span>
+
+      {/* Action wrapper & pricing estimates */}
+      <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t border-slate-850 sm:border-t-0 pt-3 sm:pt-0">
+        <div className="flex flex-col items-start sm:items-end">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">EST. Payout Value</span>
+          <span className="text-md font-black text-emerald-400 font-mono">
+            {formattedDelivery} {fallbackTarget}
+          </span>
         </div>
-        <div className="flex justify-between text-slate-400">
-          <span>Recipient gets</span>
-          <span className="font-mono text-slate-100">{route.total_delivery_amount}</span>
-        </div>
-        {route.delivery_time && (
-          <div className="flex justify-between text-slate-400">
-            <span>Delivery time</span>
-            <span className="font-mono text-slate-200">{route.delivery_time}</span>
-          </div>
-        )}
+
+        {/* 
+          Using an explicit anchor link with explicit interactive priority properties (z-30 pointer-events-auto)
+          to force the browser to capture click events directly on this target, ignoring sibling elements.
+        */}
+        <a
+          href={route.redirection_url || '#'}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={handleAnchorClick}
+          className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 hover:scale-105 active:scale-95 text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer inline-flex items-center justify-center text-center min-w-[120px] relative z-30 pointer-events-auto shadow-[0_4px_15px_rgba(16,185,129,0.2)]"
+        >
+          Send Now
+        </a>
       </div>
-      <button
-        className={`mt-4 w-full flex items-center justify-center gap-2 rounded-xl border py-2 text-sm transition-colors ${
-          isSelected
-            ? 'border-emeraldNeon/60 text-emeraldNeon bg-emeraldNeon/10'
-            : 'border-white/10 text-slate-200 hover:border-sapphireNeon/50 hover:text-sapphireNeon'
-        }`}
-      >
-        <Check size={14} /> {isSelected ? 'Selected' : 'Select route'}
-      </button>
-    </motion.div>
+    </div>
   );
 }
