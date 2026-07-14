@@ -32,6 +32,50 @@ white `brand-card` — a deliberate, common pattern for a light mark in a dark p
 `public/logo-full.png` (icon + wordmark) and `public/logo-icon.png` (mark only) were cropped
 from your upload for this purpose.
 
+## What's fully wired vs. stubbed
+
+| Feature | Status |
+|---|---|
+| Routing, layout, protected routes | Done |
+| Mobile nav (hamburger menu) | Done — the previous navbar hid links below `md` with no fallback; fixed |
+| Intro video → loader → app boot sequence | Done — needs your video file, see below |
+| Auth state (Zustand, persisted) | Done — UI complete; `authService.js` mocks the network call |
+| Currency onboarding | Done, persisted |
+| 3D loader | Done |
+| Dashboard (full-width rate graph + stats, market feed, ambient network) | Done — `marketService.js` mocks `/market/*` |
+| Compare engine | Done — calls your real `/api/v1/compare`, falls back to labeled sample data if the backend isn't running |
+| Ledger / Recipients | Done — call your real endpoints, same sample-data fallback; ledger has a mobile card view instead of a squeezed table |
+| Footer | Done |
+| AI chatbot widget | UI + service layer done; `chatService.js` returns canned replies until `/api/v1/chat` exists |
+| Error boundary | Done — a crash now shows a recover screen instead of a blank page |
+
+Every stubbed service file has a comment at the top pointing at exactly which future endpoint
+replaces the mock — the function signatures the rest of the app calls already match.
+
+## Adding your intro video
+
+Drop your file at `public/intro-video.mp4`. That's the only wiring needed — `IntroVideo.jsx`
+autoplays it muted (required for autoplay on mobile browsers), with a mute toggle and a skip
+button, then hands off to the loader and the app. It only plays once per browser session
+(`sessionStorage`), not on every page refresh.
+
+If the file isn't there, the `<video>` element's `error` event fires and the component skips
+itself automatically — nothing breaks, you just go straight to the loader.
+
+## Dashboard redesign
+
+The rate graph is now full-width with a stat row (30D high/low/avg/change) instead of sharing
+half the screen with a short bulletin list. Below it, `NewsFeed.jsx` replaces the old headline
+list with card-style entries: tag, headline, summary, a source label, and a "Read more" link
+that opens a real, relevant external page (a central bank, an economic calendar, the World
+Bank's remittance page, etc.) in a new tab.
+
+Thumbnails are gradient-and-icon placeholders in the brand palette, not hotlinked stock photos
+— pulling arbitrary images from the web into a real product is a genuine reliability and
+licensing risk. Each card already supports an optional `imageUrl` field: once `/market/bulletin`
+returns real article thumbnails, drop the URL in and the card renders that image instead of the
+placeholder automatically.
+
 ## Getting started
 
 ```bash
@@ -41,22 +85,6 @@ npm run dev
 ```
 
 `npm run build` was run against this exact codebase before delivery — it compiles clean.
-
-## What's fully wired vs. stubbed
-
-| Feature | Status |
-|---|---|
-| Routing, layout, protected routes | Done |
-| Auth state (Zustand, persisted) | Done — UI complete; `authService.js` mocks the network call |
-| Currency onboarding | Done, persisted |
-| 3D loader | Done |
-| Dashboard (bulletin, rate graph, network background) | Done — `marketService.js` mocks `/market/*` |
-| Compare engine | Done — calls your real `/api/v1/compare`, falls back to labeled sample data if the backend isn't running |
-| Ledger / Recipients | Done — call your real endpoints, same sample-data fallback |
-| AI chatbot widget | UI + service layer done; `chatService.js` returns canned replies until `/api/v1/chat` exists |
-
-Every stubbed service file has a comment at the top pointing at exactly which future endpoint
-replaces the mock — the function signatures the rest of the app calls already match.
 
 ## Folder structure
 

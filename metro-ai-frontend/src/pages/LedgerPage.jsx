@@ -37,7 +37,7 @@ export default function LedgerPage() {
           Showing sample data - connect the FastAPI backend to see your real ledger.
         </p>
       )}
-      <div className="glass-panel overflow-hidden overflow-x-auto">
+      <div className="hidden md:block glass-panel overflow-hidden overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs font-mono uppercase text-slate-500 border-b border-white/5">
@@ -64,6 +64,25 @@ export default function LedgerPage() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="md:hidden space-y-3">
+        {transfers.map((t) => (
+          <div key={t.id} className="glass-panel p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-slate-100 text-sm font-medium">{t.recipient}</p>
+              <span className={`text-xs font-mono px-2 py-1 rounded-full ${STATUS_STYLES[t.status]}`}>{t.status}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs font-mono text-slate-500 mb-2">
+              <span>{t.date}</span>
+              <span>{t.provider}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm pt-2 border-t border-white/5">
+              <span className="text-slate-400 font-mono">{t.sent}</span>
+              <span className="text-slate-100 font-mono">{t.received}</span>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -1,155 +1,152 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { Loader2 } from 'lucide-react';
+import { getCompare } from '../../services/compareService';
+import { useCurrencyStore } from '../../store/useCurrencyStore';
+import AIRecommendationBanner from './AIRecommendationBanner';
 import RouteCard from './RouteCard';
-import { useAuthStore } from '../../store/useAuthStore';
+
+const CURRENCIES = ['CAD', 'USD', 'GBP', 'EUR', 'AUD'];
+const TARGET_CURRENCIES = ['INR', 'PKR', 'PHP', 'MXN', 'NGN', 'CNY'];
+const PAYOUT_METHODS = ['Bank Deposit', 'Cash Pickup', 'Mobile Wallet'];
+
+function buildMockResponse({ source, target, amount }) {
+  const numericAmount = Number(amount) || 1000;
+  const providers = ['Wise', 'Remitly', 'Xoom', 'WorldRemit'];
+  const routes = providers.map((provider_name, i) => {
+    const rate = 61.5 + i * 0.35 + Math.random() * 0.4;
+    return {
+      provider_name,
+      exchange_rate: rate.toFixed(3),
+      total_delivery_amount: (numericAmount * rate * (0.985 - i * 0.004)).toFixed(2),
+      delivery_time: ['Minutes', 'Within hours', '1 business day', '1-2 business days'][i],
+    };
+  });
+
+  return {
+    routes: routes.sort((a, b) => b.total_delivery_amount - a.total_delivery_amount),
+    ai_recommendation: Math.random() > 0.4 ? 'SEND' : 'HOLD',
+    ai_analysis_summary: `Sample data - ${source} to ${target} rates have been range-bound this week. Connect the FastAPI backend to see live Gemini-generated analysis.`,
+  };
+}
 
 export default function CompareEngine() {
-  const [source, setSource] = useState('CAD');
-  const [target, setTarget] = useState('INR');
-  const [amount, setAmount] = useState(1000);
-  const [payoutMethod, setPayoutMethod] = useState('bank');
-  
-  const [compareData, setCompareData] = useState(null);
-  const [ratesLoading, setRatesLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const { baseCurrency, targetCurrency } = useCurrencyStore();
+  const [form, setForm] = useState({
+    source: baseCurrency || 'CAD',
+    target: targetCurrency || 'INR',
+    amount: 1000,
+    payoutMethod: PAYOUT_METHODS[0],
+  });
+  const [result, setResult] = useState(null);
+  const [selectedRoute, setSelectedRoute] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isDemoData, setIsDemoData] = useState(false);
 
-  const fetchComparisons = async () => {
-    setRatesLoading(true);
-    setError(null);
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setIsLoading(true);
+    setSelectedRoute(null);
     try {
-      const token = useAuthStore.getState ? useAuthStore.getState().token : localStorage.getItem('token');
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/v1/compare?source=${source}&target=${target}&amount=${amount}&payout_method=${payoutMethod}`,
-        {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      );
-      if (!response.ok) throw new Error('Failed to retrieve active marketplace routing parameters.');
-      const data = await response.json();
-      setCompareData(data);
+      const data = await getCompare(form);
+      setResult(data);
+      setIsDemoData(false);
     } catch (err) {
-      setError(err.message || 'API connection failed. Please ensure your backend is active.');
+      // Backend isn't reachable in this environment - fall back to
+      // realistic sample data so the UI stays fully demoable.
+      setResult(buildMockResponse(form));
+      setIsDemoData(true);
     } finally {
-      setRatesLoading(false);
+      setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchComparisons();
-  }, [source, target, payoutMethod]);
+  }
 
   return (
-    <div className="w-full max-w-6xl mx-auto p-4 md:p-6 flex flex-col gap-8 relative z-10">
-      {/* Search Filter Panel */}
-      <div className="bg-slate-900/40 border border-slate-800 p-6 rounded-2xl flex flex-col gap-6 h-fit backdrop-blur-sm relative z-20">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-400">From</label>
-            <select
-              className="bg-slate-950 border border-slate-850 rounded-xl px-3 py-3 text-white font-bold focus:outline-none"
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-            >
-              <option value="CAD">CAD (Canada)</option>
-              <option value="USD">USD (United States)</option>
-              <option value="GBP">GBP (United Kingdom)</option>
-              <option value="EUR">EUR (Eurozone)</option>
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-400">To</label>
-            <select
-              className="bg-slate-950 border border-slate-850 rounded-xl px-3 py-3 text-white font-bold focus:outline-none"
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-            >
-              <option value="INR">INR (India)</option>
-              <option value="PKR">PKR (Pakistan)</option>
-              <option value="NGN">NGN (Nigeria)</option>
-              <option value="BDT">BDT (Bangladesh)</option>
-              <option value="PHP">PHP (Philippines)</option>
-              <option value="EUR">EUR (Europe)</option>
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Amount</label>
-            <input
-              type="number"
-              className="bg-slate-950 border border-slate-850 rounded-xl px-4 py-2.5 text-white font-mono font-bold focus:outline-none w-full"
-              value={amount}
-              onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Payout Method</label>
-            <select
-              className="bg-slate-950 border border-slate-850 rounded-xl px-3 py-3 text-white font-bold focus:outline-none"
-              value={payoutMethod}
-              onChange={(e) => setPayoutMethod(e.target.value)}
-            >
-              <option value="bank">Bank Deposit</option>
-              <option value="cash">Cash Pickup</option>
-            </select>
-          </div>
+    <div className="space-y-6">
+      <form onSubmit={handleSubmit} className="glass-panel p-5 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div>
+          <label className="text-xs font-mono uppercase text-slate-400">From</label>
+          <select
+            value={form.source}
+            onChange={(e) => setForm({ ...form, source: e.target.value })}
+            className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-sapphireNeon/60"
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c} value={c} className="bg-obsidian">
+                {c}
+              </option>
+            ))}
+          </select>
         </div>
-
+        <div>
+          <label className="text-xs font-mono uppercase text-slate-400">To</label>
+          <select
+            value={form.target}
+            onChange={(e) => setForm({ ...form, target: e.target.value })}
+            className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-sapphireNeon/60"
+          >
+            {TARGET_CURRENCIES.map((c) => (
+              <option key={c} value={c} className="bg-obsidian">
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-mono uppercase text-slate-400">Amount</label>
+          <input
+            type="number"
+            min="1"
+            value={form.amount}
+            onChange={(e) => setForm({ ...form, amount: e.target.value })}
+            className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-sapphireNeon/60"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-mono uppercase text-slate-400">Payout method</label>
+          <select
+            value={form.payoutMethod}
+            onChange={(e) => setForm({ ...form, payoutMethod: e.target.value })}
+            className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-sapphireNeon/60"
+          >
+            {PAYOUT_METHODS.map((m) => (
+              <option key={m} value={m} className="bg-obsidian">
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
         <button
-          onClick={fetchComparisons}
-          disabled={ratesLoading}
-          className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-emerald-950 text-slate-950 font-extrabold py-3 px-4 rounded-xl text-sm transition-all shadow-[0_4px_20px_rgba(16,185,129,0.25)] flex items-center justify-center gap-2"
+          type="submit"
+          disabled={isLoading}
+          className="md:col-span-4 mt-2 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sapphireNeon to-emeraldNeon text-void font-display font-semibold py-2.5 disabled:opacity-60"
         >
-          {ratesLoading ? 'Re-routing Markets...' : 'Compare routes'}
+          {isLoading && <Loader2 size={16} className="animate-spin" />}
+          {isLoading ? 'Analyzing routes...' : 'Compare routes'}
         </button>
-      </div>
+      </form>
 
-      {/* AI recommendation Banner */}
-      {compareData && (
-        <div className={`p-6 rounded-2xl border backdrop-blur-sm relative overflow-hidden transition-all shadow-xl z-20 ${
-          compareData.ai_recommendation === 'SEND' || compareData.ai_recommendation === 'FORCE_SEND'
-            ? 'bg-emerald-950/20 border-emerald-800/60 shadow-[inset_0_0_20px_rgba(16,185,129,0.05)]'
-            : 'bg-amber-950/20 border-amber-800/60 shadow-[inset_0_0_20px_rgba(245,158,11,0.05)]'
-        }`}>
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between relative z-10">
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">AI DIRECTIVE</span>
-              <h3 className="text-lg font-bold text-white">
-                {compareData.ai_recommendation === 'SEND' || compareData.ai_recommendation === 'FORCE_SEND' ? 'Opportunity Detected' : 'Hold For Now'}
-              </h3>
-              <p className="text-sm text-slate-300 leading-relaxed max-w-2xl">{compareData.ai_analysis_summary}</p>
-            </div>
+      {result && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+          {isDemoData && (
+            <p className="text-xs font-mono text-slate-500">
+              Showing sample data - connect the FastAPI backend to see live rates.
+            </p>
+          )}
+          <AIRecommendationBanner recommendation={result.ai_recommendation} summary={result.ai_analysis_summary} />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {result.routes?.map((route, i) => (
+              <RouteCard
+                key={route.provider_name}
+                route={route}
+                isBest={i === 0}
+                isSelected={selectedRoute?.provider_name === route.provider_name}
+                onSelect={setSelectedRoute}
+              />
+            ))}
           </div>
-        </div>
+        </motion.div>
       )}
-
-      {/* Channels List Container (Explicitly styled as full-width vertical stack) */}
-      <div className="flex flex-col gap-4 w-full relative z-20">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Optimized Remittance Channels</h4>
-        
-        {ratesLoading ? (
-          [1, 2, 3].map((i) => (
-            <div key={i} className="bg-slate-900/40 border border-slate-900 p-6 rounded-2xl animate-pulse h-24"></div>
-          ))
-        ) : compareData && compareData.routes && compareData.routes.length > 0 ? (
-          compareData.routes.map((route, idx) => (
-            <RouteCard 
-              key={route.provider_name} 
-              route={route} 
-              idx={idx} 
-              source={source} 
-              target={target}
-              onSelect={(selected) => {
-                console.log("[METRO AI] Selected transaction route recorded in parent scope: ", selected);
-              }}
-            />
-          ))
-        ) : (
-          <div className="p-8 text-center bg-slate-900/10 border border-slate-900 rounded-2xl">
-            <p className="text-slate-400 text-sm">No pathways found for this corridor.</p>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
