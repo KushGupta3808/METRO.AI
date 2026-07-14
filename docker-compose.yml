@@ -1,10 +1,10 @@
-STREAMING_CHUNK: Defining docker compose service orchestrator schema
+STREAMING_CHUNK:Defining the global docker-compose services orchestration
 
 version: '3.8'
 
 services:
 
-STREAMING_CHUNK: Configuring production-ready PostgreSQL service
+STREAMING_CHUNK:Configuring the PostgreSQL database service container
 
 db:
 image: postgres:16-alpine
@@ -24,7 +24,7 @@ interval: 5s
 timeout: 5s
 retries: 5
 
-STREAMING_CHUNK: Configuring FastAPI application container
+STREAMING_CHUNK:Configuring the FastAPI backend application container
 
 api:
 build:
@@ -41,6 +41,8 @@ environment:
 depends_on:
 db:
 condition: service_healthy
+
+STREAMING_CHUNK:Defining long-term persistent volume mounts for data safety
 
 volumes:
 pgdata:
