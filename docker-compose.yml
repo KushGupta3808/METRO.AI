@@ -1,0 +1,46 @@
+STREAMING_CHUNK: Defining docker compose service orchestrator schema
+
+version: '3.8'
+
+services:
+
+STREAMING_CHUNK: Configuring production-ready PostgreSQL service
+
+db:
+image: postgres:16-alpine
+container_name: metro_ai_postgres
+restart: always
+environment:
+POSTGRES_USER: metro_admin
+POSTGRES_PASSWORD: metro_secure_password_2026
+POSTGRES_DB: metro_ai_db
+ports:
+- "5432:5432"
+volumes:
+- pgdata:/var/lib/postgresql/data
+healthcheck:
+test: ["CMD-SHELL", "pg_isready -U metro_admin -d metro_ai_db"]
+interval: 5s
+timeout: 5s
+retries: 5
+
+STREAMING_CHUNK: Configuring FastAPI application container
+
+api:
+build:
+context: ./backend
+dockerfile: Dockerfile
+container_name: metro_ai_backend
+restart: always
+ports:
+- "8000:8000"
+environment:
+- DATABASE_URL=postgresql+asyncpg://metro_admin:metro_secure_password_2026@db:5432/metro_ai_db
+- METRO_AI_ENV=production
+- METRO_AI_JWT_SECRET=super_secret_production_key_change_me_in_cloud
+depends_on:
+db:
+condition: service_healthy
+
+volumes:
+pgdata:
