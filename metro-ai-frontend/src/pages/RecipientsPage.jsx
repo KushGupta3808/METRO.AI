@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 
 export default function RecipientsPage() {
@@ -21,6 +21,9 @@ export default function RecipientsPage() {
   const [formAccountNumber, setFormAccountNumber] = useState('');
   const [formSubmitting, setFormSubmitting] = useState(false);
 
+  // Hold a reference to the active Zustand store to bypass race-condition sync loops
+  const authStoreRef = useRef(null);
+
   // Dynamic state subscriber ensuring zero import-resolution compiler locks
   useEffect(() => {
     let unsubscribe = null;
@@ -29,6 +32,7 @@ export default function RecipientsPage() {
       .then((module) => {
         const store = module.useAuthStore || module.default;
         if (store && typeof store.getState === 'function') {
+          authStoreRef.current = store;
           const initialState = store.getState();
           setAuth({
             token: initialState.token,
@@ -70,6 +74,20 @@ export default function RecipientsPage() {
           'Content-Type': 'application/json'
         }
       });
+
+      // Self-Healing Session Reset: Call store logout directly to stop race-condition loops
+      if (response.status === 401) {
+        console.warn("[METRO AI] Invalid or expired session detected. Triggering deep logout routine...");
+        
+        if (authStoreRef.current && typeof authStoreRef.current.getState === 'function') {
+          authStoreRef.current.getState().logout();
+        } else {
+          localStorage.removeItem('token');
+        }
+        
+        window.location.reload();
+        return;
+      }
 
       if (!response.ok) throw new Error("Failed to load recipient contacts database.");
       const data = await response.json();
@@ -233,7 +251,7 @@ export default function RecipientsPage() {
         <div className="bg-emerald-950/20 border border-emerald-500/20 p-4 rounded-xl flex items-center gap-3">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
           <span className="text-xs text-emerald-300 font-bold font-mono uppercase tracking-wider">
-            Connected to Live SQLite Contacts Database
+            Connected to Live Database
           </span>
         </div>
       )}
