@@ -18,17 +18,20 @@ FROM python:3.12-slim AS runner
 
 WORKDIR /app
 
-# Copy built wheels/binaries safely
-COPY --from=builder /root/.local /root/.local
-COPY . .
+# Create the non-root user first so we can chown into their home dir
+RUN useradd -m metro-user
 
-ENV PATH=/root/.local/bin:$PATH
+# Copy built wheels/binaries into metro-user's home, owned by metro-user
+COPY --from=builder --chown=metro-user:metro-user /root/.local /home/metro-user/.local
+COPY --chown=metro-user:metro-user . .
+
+ENV PATH=/home/metro-user/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV METRO_AI_ENV=production
 
 # Drop privileges to non-root for security hardening
-RUN useradd -m metro-user && chown -R metro-user:metro-user /app
+RUN chown -R metro-user:metro-user /app
 USER metro-user
 
 EXPOSE 8000
