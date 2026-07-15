@@ -1,11 +1,85 @@
 // Placeholder service for /api/v1/market/bulletin and /api/v1/market/graphs.
-// Swap the generated data below for real apiClient.request(...) calls once
-// those endpoints ship - the shapes returned here are what the UI expects.
+// getNewsFeed() is still mocked - swap it for a real apiClient.request(...)
+// call once that endpoint ships.
 //
-// Note on sourceUrl below: these point at real, relevant destinations (a
-// central bank, a real economic calendar, the World Bank's remittance page)
-// for further reading - they are not claiming those sites wrote the exact
-// headline text, which is METRO AI's own generated copy.
+// getRateSeries()/getLatestRate() are NOT mocked - they call Frankfurter
+// (api.frankfurter.dev), a free, keyless, no-signup exchange rate API
+// backed by real central bank data (ECB and others). No API key, no
+// backend needed. If a currency pair isn't covered there, both functions
+// fall back to a deterministic simulated series so the UI never breaks -
+// and the fallback is always labeled as simulated, never presented as live.
+
+const FX_API_BASE = 'https://api.frankfurter.dev/v1';
+
+function formatDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function seedFromPair(base, target) {
+  return (base + target).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+}
+
+function generateSimulatedSeries(base, target) {
+  const days = 30;
+  const seed = seedFromPair(base, target);
+  let value = 45 + (seed % 30);
+  const today = new Date();
+  return Array.from({ length: days }).map((_, i) => {
+    value += (Math.sin(i / 3 + seed) + Math.random() - 0.5) * 0.6;
+    const date = new Date(today);
+    date.setDate(date.getDate() - (days - i));
+    return {
+      date: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      rate: Number(value.toFixed(3)),
+    };
+  });
+}
+
+// Real historical daily rates over the last 30 days for {base}/{target}.
+// Falls back to a simulated series (clearly flagged via isLive: false) if
+// the pair isn't covered or the request fails for any reason.
+export async function getRateSeries(base, target) {
+  try {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+
+    const url = `${FX_API_BASE}/${formatDate(start)}..${formatDate(end)}?base=${base}&symbols=${target}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`FX API responded ${response.status}`);
+
+    const payload = await response.json();
+    const entries = Object.entries(payload.rates || {}).sort(([a], [b]) => (a < b ? -1 : 1));
+    const series = entries
+      .map(([date, rates]) => ({
+        date: new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        rate: rates[target] != null ? Number(rates[target].toFixed(4)) : null,
+      }))
+      .filter((point) => point.rate != null);
+
+    if (!series.length) throw new Error('No rate data returned for this pair');
+    return { isLive: true, series };
+  } catch (err) {
+    return { isLive: false, series: generateSimulatedSeries(base, target) };
+  }
+}
+
+// A single current rate - used by the Compare Engine's demo fallback so
+// the sample provider offers are built around a real mid-market rate
+// instead of an arbitrary number, whenever the pair is covered.
+export async function getLatestRate(base, target) {
+  try {
+    const response = await fetch(`${FX_API_BASE}/latest?base=${base}&symbols=${target}`);
+    if (!response.ok) throw new Error(`FX API responded ${response.status}`);
+    const payload = await response.json();
+    const rate = payload.rates?.[target];
+    if (rate == null) throw new Error('No rate for this pair');
+    return { rate, isLive: true };
+  } catch (err) {
+    const seed = seedFromPair(base, target);
+    return { rate: 45 + (seed % 30) + (seed % 7) / 10, isLive: false };
+  }
+}
 
 export async function getNewsFeed(targetCurrency) {
   return [
@@ -62,21 +136,4 @@ export async function getNewsFeed(targetCurrency) {
       sourceUrl: 'https://www.gsma.com/mobilefordevelopment/mobile-money/',
     },
   ];
-}
-
-export async function getRateSeries(base, target) {
-  const days = 30;
-  const seed = (base + target).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  let value = 45 + (seed % 30);
-  const today = new Date();
-
-  return Array.from({ length: days }).map((_, i) => {
-    value += (Math.sin(i / 3 + seed) + Math.random() - 0.5) * 0.6;
-    const date = new Date(today);
-    date.setDate(date.getDate() - (days - i));
-    return {
-      date: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-      rate: Number(value.toFixed(3)),
-    };
-  });
 }

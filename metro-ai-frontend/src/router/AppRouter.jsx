@@ -10,6 +10,7 @@ import ComparePage from '../pages/ComparePage';
 import LedgerPage from '../pages/LedgerPage';
 import RecipientsPage from '../pages/RecipientsPage';
 import FAQPage from '../pages/FAQPage';
+import AboutPage from '../pages/AboutPage';
 
 function RequireAuth({ children }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -26,6 +27,7 @@ export default function AppRouter() {
 
   return (
     <Routes>
+      <Route path="/about" element={<AboutPage />} />
       <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
       <Route path="/signup" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <SignupPage />} />
       <Route

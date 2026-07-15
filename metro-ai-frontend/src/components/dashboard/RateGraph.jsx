@@ -39,12 +39,14 @@ function StatChip({ label, value, icon, tone }) {
 export default function RateGraph() {
   const { baseCurrency, targetCurrency } = useCurrencyStore();
   const [data, setData] = useState([]);
+  const [isLive, setIsLive] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     setIsLoading(true);
-    getRateSeries(baseCurrency || 'CAD', targetCurrency || 'INR').then((d) => {
-      setData(d);
+    getRateSeries(baseCurrency || 'CAD', targetCurrency || 'INR').then((result) => {
+      setData(result.series);
+      setIsLive(result.isLive);
       setIsLoading(false);
     });
   }, [baseCurrency, targetCurrency]);
@@ -63,7 +65,7 @@ export default function RateGraph() {
 
   return (
     <div className="glass-panel p-5 md:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-2">
         <div>
           <p className="text-xs font-mono uppercase tracking-wider text-slate-400">
             {baseCurrency || 'CAD'} / {targetCurrency || 'INR'}
@@ -78,6 +80,20 @@ export default function RateGraph() {
           {isUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
           {Math.abs(delta).toFixed(3)}
         </div>
+      </div>
+
+      <div className="mb-6">
+        {isLive ? (
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-emeraldNeon">
+            <span className="h-1.5 w-1.5 rounded-full bg-emeraldNeon animate-pulse" /> Live rates - Frankfurter (ECB
+            data)
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-slate-500" /> Simulated - live data not available for this
+            pair
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">

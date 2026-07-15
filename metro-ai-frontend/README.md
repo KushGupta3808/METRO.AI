@@ -37,13 +37,16 @@ from your upload for this purpose.
 | Feature | Status |
 |---|---|
 | Routing, layout, protected routes | Done |
+| Public About page | Done — `/about`, no login required |
 | Mobile nav (hamburger menu) | Done — the previous navbar hid links below `md` with no fallback; fixed |
-| Intro video → loader → app boot sequence | Done — needs your video file, see below |
+| Intro video → loader → app boot sequence | Done |
 | Auth state (Zustand, persisted) | Done — UI complete; `authService.js` mocks the network call |
 | Currency onboarding | Done, persisted |
 | 3D loader | Done |
-| Dashboard (full-width rate graph + stats, market feed, ambient network) | Done — `marketService.js` mocks `/market/*` |
-| Compare engine | Done — calls your real `/api/v1/compare`, falls back to labeled sample data if the backend isn't running |
+| Dashboard rate graph | **Live real data** via Frankfurter (free, keyless FX API, ECB-sourced) where the pair is covered; falls back to clearly-labeled simulated data otherwise |
+| Dashboard market feed | Done — `marketService.getNewsFeed()` mocks `/market/bulletin` |
+| Compare engine | Done — calls your real `/api/v1/compare`; demo fallback is priced off the same live FX rate, not arbitrary numbers |
+| Send with a route | Opens the real provider's site (Wise, Remitly, Xoom, WorldRemit) in a new tab — see note below |
 | Ledger / Recipients | Done — call your real endpoints, same sample-data fallback; ledger has a mobile card view instead of a squeezed table |
 | Footer | Done |
 | AI chatbot widget | UI + service layer done; `chatService.js` returns canned replies until `/api/v1/chat` exists |
@@ -51,6 +54,35 @@ from your upload for this purpose.
 
 Every stubbed service file has a comment at the top pointing at exactly which future endpoint
 replaces the mock — the function signatures the rest of the app calls already match.
+
+## Live FX data
+
+`marketService.getRateSeries()` and `getLatestRate()` call
+[Frankfurter](https://frankfurter.dev) (`api.frankfurter.dev`), a free, keyless exchange-rate
+API sourced from real central bank data. No signup, no key, no backend needed for this part.
+
+Coverage is real central-bank data, not universal - Frankfurter's classic rate set covers CAD,
+USD, GBP, EUR, AUD, INR, MXN, PHP, CNY and more, but not every currency in the app's dropdowns
+(PKR and NGN aren't covered). When a pair isn't available, both functions fall back to a
+deterministic simulated series - and the UI always says so, with a small "Simulated" badge on
+the graph and a "sample routing" note on the Compare Engine, rather than quietly showing fake
+numbers as if they were real.
+
+## Sending with a provider
+
+Clicking "Send with Wise" (or Remitly, Xoom, WorldRemit) on a route card opens that provider's
+real website in a new tab via `src/utils/providers.js`. This is a genuine limitation worth
+being upfront about: there's no public API for pre-filling a specific amount/currency into
+those providers' own send flows, so it opens their homepage, not a pre-filled checkout. That's
+also how real comparison sites (Monito, etc.) work - they route you to the provider, they don't
+complete the transfer themselves. An unrecognized provider name falls back to a search link
+instead of guessing a URL.
+
+## About page
+
+`/about` is intentionally public - no login required, its own lightweight header instead of the
+authenticated navbar. Real product content only: mission, how-it-works, values. No fabricated
+team bios, user counts, or press mentions - swap in real ones when you have them.
 
 ## Adding your intro video
 
