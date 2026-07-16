@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
-export default function LedgerPage() {
+export default function Ledger() {
   // Resilient session fallbacks for isolated builders
   const [auth, setAuth] = useState({
     token: localStorage.getItem('token') || null,
@@ -45,7 +45,7 @@ export default function LedgerPage() {
     };
   }, []);
 
-  // Fetch real database transfers and recipients to map names in-memory
+  // Fetch real SQLite database transfers and recipients to map names in-memory
   useEffect(() => {
     async function fetchLedgerAndRecipients() {
       if (!auth.isAuthenticated || !auth.token) {
@@ -67,14 +67,6 @@ export default function LedgerPage() {
             headers: { 'Authorization': `Bearer ${auth.token}` }
           })
         ]);
-
-        // Self-Healing Session Reset: If server rejects token, immediately log out
-        if (transfersRes.status === 401 || recipientsRes.status === 401) {
-          console.warn("[METRO AI] Invalid or expired session detected. Resetting local auth parameters...");
-          localStorage.removeItem('token');
-          window.location.reload();
-          return;
-        }
 
         if (!transfersRes.ok || !recipientsRes.ok) {
           throw new Error("Failed to sync secure transaction databases.");
@@ -106,7 +98,7 @@ export default function LedgerPage() {
     <div className="w-full max-w-6xl mx-auto p-4 md:p-6 flex flex-col gap-8 relative z-10">
       <div>
         <h1 className="text-3xl font-black tracking-tight text-white">Transfer ledger</h1>
-        <p className="text-sm text-slate-400 mt-1">Every transfer you’ve locked into PostgreSQL, audited in one secure terminal.</p>
+        <p className="text-sm text-slate-400 mt-1">Every transfer you’ve locked into SQLite, audited in one secure terminal.</p>
       </div>
 
       {/* Connected Success Alert Banner */}
@@ -114,7 +106,7 @@ export default function LedgerPage() {
         <div className="bg-emerald-950/20 border border-emerald-500/20 p-4 rounded-xl flex items-center gap-3">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
           <span className="text-xs text-emerald-300 font-bold font-mono uppercase tracking-wider">
-            Connected to Live Database Ledger
+            Connected to Live SQLite Database Ledger
           </span>
         </div>
       )}
@@ -196,7 +188,7 @@ export default function LedgerPage() {
           <div className="max-w-md">
             <h4 className="text-md font-bold text-white">No transactions recorded yet</h4>
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              Your database is active, but you haven't sent any funds. Go to the Compare tab, execute a route, and it will log automatically!
+              Your SQLite database is active, but you haven't sent any funds. Go to the Compare tab, execute a route, and it will log automatically!
             </p>
           </div>
         </div>
