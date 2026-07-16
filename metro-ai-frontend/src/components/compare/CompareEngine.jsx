@@ -12,6 +12,15 @@ const CURRENCIES = ['CAD', 'USD', 'GBP', 'EUR', 'AUD'];
 const TARGET_CURRENCIES = ['INR', 'PKR', 'PHP', 'MXN', 'NGN', 'CNY'];
 const PAYOUT_METHODS = ['Bank Deposit', 'Cash Pickup', 'Mobile Wallet'];
 
+// ➡️ Map providers strictly to their official homepages to prevent relative/broken path redirection errors
+const PROVIDER_HOMEPAGES = {
+  wise: 'https://wise.com',
+  remitly: 'https://www.remitly.com',
+  xoom: 'https://www.xoom.com',
+  worldremit: 'https://www.worldremit.com',
+  'western union': 'https://www.westernunion.com',
+};
+
 async function buildMockResponse({ source, target, amount }) {
   const { rate: baseRate, isLive } = await getLatestRate(source, target);
   const numericAmount = Number(amount) || 1000;
@@ -48,10 +57,12 @@ export default function CompareEngine() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDemoData, setIsDemoData] = useState(false);
 
-  // ➡️ 1. UPDATED LOGGING HANDLER WITH SELF-HEALING SCHEMAS
+  // ➡️ UPDATED REDIRECTION HANDLER (Uses clean, absolute homepages)
   const handleSendRedirect = async (route) => {
-    // Open target website (fallback to standard portal if redirection_url isn't in API response)
-    const targetUrl = route.redirection_url || `https://www.${route.provider_name.toLowerCase()}.com`;
+    const providerKey = route.provider_name.toLowerCase().trim();
+    
+    // Always resolve to the clean homepage URL mapping (guarantees no relative path "not found" errors)
+    const targetUrl = PROVIDER_HOMEPAGES[providerKey] || `https://www.${providerKey}.com`;
     window.open(targetUrl, '_blank', 'noopener,noreferrer');
 
     // Record transaction details silently to PostgreSQL in the background
@@ -62,7 +73,6 @@ export default function CompareEngine() {
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
       };
 
-      // Determine correct API URL depending on frontend hosting
       const origin = window.location.origin;
       const baseUrl = origin.includes('localhost') && !origin.includes('8000')
         ? 'http://localhost:8000'
@@ -70,20 +80,20 @@ export default function CompareEngine() {
 
       let recipientId = null;
 
-      // A. Look up if user has any active recipients in database
+      // Look up existing directory recipient profile
       try {
         const recRes = await fetch(`${baseUrl}/api/v1/recipients`, { headers });
         if (recRes.ok) {
           const recipients = await recRes.json();
           if (recipients && recipients.length > 0) {
-            recipientId = recipients[0].id; // Use first available recipient
+            recipientId = recipients[0].id;
           }
         }
       } catch (err) {
-        console.warn("Could not look up directory recipients, attempting background creation...", err);
+        console.warn("Could not retrieve existing recipient contacts, fallback pending...", err);
       }
 
-      // B. Create a fallback default recipient silently if directory is empty
+      // Automatically spin up a silent fallback recipient if one doesn't exist
       if (!recipientId) {
         try {
           const createRes = await fetch(`${baseUrl}/api/v1/recipients`, {
@@ -100,16 +110,15 @@ export default function CompareEngine() {
             recipientId = newRecipient.id;
           }
         } catch (err) {
-          console.error("Failed to seed dynamic default recipient:", err);
+          console.error("Auto-creation of default recipient directory contact failed:", err);
         }
       }
 
-      // C. Safe absolute fallback id
       if (!recipientId) {
         recipientId = 1;
       }
 
-      // D. Send schema-conformant snake_case keys to avoid FastAPI 422 errors
+      // Audit writing safely in snake_case directly to database backend
       await createTransfer({
         recipient_id: Number(recipientId),
         source_currency: form.source,  
@@ -122,7 +131,7 @@ export default function CompareEngine() {
         ai_recommendation_at_time: result?.ai_recommendation || 'SEND'
       });
 
-      console.log("Success: Transfer safely written to PostgreSQL ledger!");
+      console.log("Success: Transfer logged securely to database!");
     } catch (error) {
       console.error("Background auto-logging failed:", error);
     }
@@ -230,7 +239,7 @@ export default function CompareEngine() {
             ))}
           </div>
 
-          {/* ➡️ 2. DYNAMIC CALL TO ACTION PANEL */}
+          {/* DYNAMIC CALL TO ACTION PANEL */}
           {selectedRoute && (
             <motion.div 
               initial={{ y: 10, opacity: 0 }}
