@@ -4,7 +4,7 @@
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 // 🚀 The active model we are pointing to:
-const MODEL_NAME = "gemini-1.5-flash";
+const MODEL_NAME = "gemini-3.5-flash";
 
 /**
  * Sends chat messages directly to Google's Gemini LLM.
@@ -47,7 +47,7 @@ export async function sendMessage(userMessage, corridorContext = {}) {
         ],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 250,
+          maxOutputTokens: 1000,
         }
       })
     });
