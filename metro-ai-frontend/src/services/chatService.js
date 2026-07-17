@@ -1,21 +1,73 @@
-// Placeholder for /api/v1/chat (REST or WebSocket - backend TBD).
-// sendMessage() returns a canned, corridor-aware reply so the widget is
-// fully demoable now. Replace the body with a real fetch/WebSocket call -
-// ChatWidget only depends on this function's signature.
+// src/services/chatService.js
 
-const CANNED_REPLIES = [
-  (base, target) =>
-    `Corridor ${base} to ${target} looks stable right now. I would wait for the next bulletin before moving a large amount.`,
-  (base, target) =>
-    `Based on the last 30 days, ${target} has been drifting in your favor. Small transfers now are reasonable.`,
-  () => 'I can pull live routes for you - try the Compare tab and I will break down the AI recommendation.',
-];
+// 🔴 PASTE YOUR NEW 'AQ.' KEY DIRECTLY INSIDE THESE QUOTES:
+const GEMINI_API_KEY = "REMOVED_SECRET"; 
 
-export async function sendMessage(message, { baseCurrency, targetCurrency } = {}) {
-  await new Promise((resolve) => setTimeout(resolve, 700 + Math.random() * 500));
-  const reply = CANNED_REPLIES[Math.floor(Math.random() * CANNED_REPLIES.length)];
-  return {
-    role: 'assistant',
-    text: reply(baseCurrency || 'CAD', targetCurrency || 'INR'),
-  };
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+/**
+ * Sends chat messages directly to Google's Gemini LLM.
+ */
+export async function sendMessage(userMessage, corridorContext = {}) {
+  const { baseCurrency = 'CAD', targetCurrency = 'INR' } = corridorContext;
+
+  // Simple, unconfusing guard clause
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === "YOUR_GEMINI_API_KEY_HERE") {
+    return {
+      role: 'assistant',
+      text: "⚠️ CONFIGURATION ERROR: You still need to paste your API key inside the quotes at the very top of 'src/services/chatService.js'!"
+    };
+  }
+
+  const systemInstruction = `
+    You are Metro AI, a warm, highly empathetic human financial advisor and remittance expert. 
+    Your job is to help the user navigate sending money from ${baseCurrency} to ${targetCurrency}.
+    
+    CRITICAL RULES:
+    1. NEVER sound like a robot, system log, or machine.
+    2. Speak like a helpful, grounded peer. Use phrases like "If I were you...", "I'd suggest waiting...", or "Honestly, it looks like...".
+    3. Keep answers concise and conversational (max 2-3 short paragraphs).
+  `;
+
+  try {
+    const response = await fetch(GEMINI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${systemInstruction}\n\nUser Question: ${userMessage}` }]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 250,
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const apiMessage = errorData.error?.message || `HTTP Status ${response.status}`;
+      throw new Error(`Google API rejected: ${apiMessage}`);
+    }
+
+    const data = await response.json();
+    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    return {
+      role: 'assistant',
+      text: aiText || "I received an empty response. Try rephrasing!"
+    };
+
+  } catch (error) {
+    console.error("Gemini API Error details:", error);
+    return {
+      role: 'assistant',
+      text: `❌ CONNECTION ERROR: ${error.message}`
+    };
+  }
 }
