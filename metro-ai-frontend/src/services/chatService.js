@@ -1,9 +1,10 @@
 // src/services/chatService.js
 
-// 🔴 PASTE YOUR NEW 'AQ.' KEY DIRECTLY INSIDE THESE QUOTES:
-const GEMINI_API_KEY = "REMOVED_SECRET"; 
+// Reads the key from your .env file — never hardcode it here.
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+// 🚀 The active model we are pointing to:
+const MODEL_NAME = "gemini-1.5-flash";
 
 /**
  * Sends chat messages directly to Google's Gemini LLM.
@@ -11,11 +12,11 @@ const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/
 export async function sendMessage(userMessage, corridorContext = {}) {
   const { baseCurrency = 'CAD', targetCurrency = 'INR' } = corridorContext;
 
-  // Simple, unconfusing guard clause
-  if (!GEMINI_API_KEY || GEMINI_API_KEY === "YOUR_GEMINI_API_KEY_HERE") {
+  // Simple guard clause to prevent running with a missing key
+  if (!GEMINI_API_KEY) {
     return {
       role: 'assistant',
-      text: "⚠️ CONFIGURATION ERROR: You still need to paste your API key inside the quotes at the very top of 'src/services/chatService.js'!"
+      text: "⚠️ CONFIGURATION ERROR: VITE_GEMINI_API_KEY is missing. Add it to your .env file."
     };
   }
 
@@ -29,8 +30,10 @@ export async function sendMessage(userMessage, corridorContext = {}) {
     3. Keep answers concise and conversational (max 2-3 short paragraphs).
   `;
 
+  const dynamicUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
+
   try {
-    const response = await fetch(GEMINI_API_URL, {
+    const response = await fetch(dynamicUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
