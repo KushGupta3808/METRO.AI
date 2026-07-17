@@ -16,7 +16,9 @@ export default function ChatWidget() {
   const [isTyping, setIsTyping] = useState(false);
   
   const chatEndRef = useRef(null);
-  const { baseCurrency, targetCurrency } = useCurrencyStore();
+
+  // 1. Pull your values dynamically from your store
+  const { baseCurrency, targetCurrency, currentRate, rateTrend } = useCurrencyStore();
 
   // Bulletproof smooth scroll to the newest message
   useEffect(() => {
@@ -34,8 +36,13 @@ export default function ChatWidget() {
     setIsTyping(true);
 
     try {
-      // Fetch the advice from the service
-      const reply = await sendMessage(text, { baseCurrency, targetCurrency });
+      // 2. Safely fetch the advice from the service inside this async block
+      const reply = await sendMessage(text, { 
+        baseCurrency, 
+        targetCurrency,
+        currentRate, 
+        rateTrend 
+      });
       setMessages((m) => [...m, reply]);
     } catch (error) {
       console.error("Chat API Error:", error);

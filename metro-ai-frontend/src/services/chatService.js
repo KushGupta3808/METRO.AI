@@ -21,8 +21,11 @@ export async function sendMessage(userMessage, corridorContext = {}) {
   }
 
   const systemInstruction = `
-    You are Metro AI, a warm, highly empathetic human financial advisor and remittance expert. 
-    Your job is to help the user navigate sending money from ${baseCurrency} to ${targetCurrency}.
+    You are Metro AI...
+  The current exchange rate from ${baseCurrency} to ${targetCurrency} is exactly ${corridorContext.currentRate || 'unknown'}.
+  The recent trend is ${corridorContext.rateTrend || 'stable'}.
+  
+  Use this real-time data to give highly accurate, contextual advice.
     
     CRITICAL RULES:
     1. NEVER sound like a robot, system log, or machine.
