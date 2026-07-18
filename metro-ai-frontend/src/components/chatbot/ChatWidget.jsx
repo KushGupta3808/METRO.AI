@@ -20,8 +20,6 @@ export default function ChatWidget() {
   // 1. Pull your values dynamically from your store
   const { baseCurrency, targetCurrency, currentRate, rateTrend } = useCurrencyStore();
 
-  console.log("🔮 FULL ZUSTAND STORE:", useCurrencyStore());
-  console.log("💥 WHAT WE ARE SENDING:", { baseCurrency, targetCurrency, currentRate, rateTrend });
 
   // Bulletproof smooth scroll to the newest message
   useEffect(() => {
