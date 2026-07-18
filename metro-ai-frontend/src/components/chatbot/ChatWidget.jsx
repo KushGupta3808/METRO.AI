@@ -1,9 +1,10 @@
 import { useRef, useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MessageSquare, X, Send, Sparkles, User, Bot } from 'lucide-react';
+import ReactMarkdown from 'react-markdown'; // 👈 2. Markdown Parser Installed
 import { sendMessage } from '../../services/chatService';
 import { useCurrencyStore } from '../../store/useCurrencyStore';
-import { getRateSeries } from '../../services/marketService'; // 👈 Import your market service
+import { getRateSeries, getNewsFeed } from '../../services/marketService'; // 👈 1. News Feed Imported
 
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
@@ -18,16 +19,21 @@ export default function ChatWidget() {
   
   const chatEndRef = useRef(null);
 
-  // 1. Pull user preferences from your store
+  // Pull user preferences from your store
   const { baseCurrency, targetCurrency } = useCurrencyStore();
 
-  // 2. Setup local states to capture the live rate and trend data
+  // Component States for live dynamic data
   const [currentRate, setCurrentRate] = useState('unknown');
   const [rateTrend, setRateTrend] = useState('stable');
+  const [newsFeed, setNewsFeed] = useState([]); // 👈 1. Added State for News Articles
 
-  // 3. Dynamically fetch market data whenever the user switches currencies
+  // Synchronize dynamic financial context
   useEffect(() => {
-    getRateSeries(baseCurrency || 'CAD', targetCurrency || 'INR')
+    const base = baseCurrency || 'CAD';
+    const target = targetCurrency || 'INR';
+
+    // Fetch Rate Metrics
+    getRateSeries(base, target)
       .then((result) => {
         if (result?.series && result.series.length > 0) {
           const rates = result.series.map((d) => d.rate);
@@ -35,16 +41,19 @@ export default function ChatWidget() {
           const prev = rates[rates.length - 2] ?? latest;
           const delta = latest - prev;
 
-          // Update local component states
           setCurrentRate(latest.toFixed(3));
           setRateTrend(delta > 0 ? 'upward' : delta < 0 ? 'downward' : 'stable');
         }
       })
-      .catch((err) => {
-        console.error("ChatWidget failed to sync live rates:", err);
-        setCurrentRate('unknown');
-        setRateTrend('stable');
-      });
+      .catch((err) => console.error("Rates sync failed:", err));
+
+    // 👈 1. Fetch Related Market Bulletin News
+    getNewsFeed(target)
+      .then((news) => {
+        setNewsFeed(news);
+      })
+      .catch((err) => console.error("News sync failed:", err));
+
   }, [baseCurrency, targetCurrency]);
 
   // Bulletproof smooth scroll to the newest message
@@ -57,18 +66,24 @@ export default function ChatWidget() {
     const text = input.trim();
     if (!text) return;
 
-    // Push user message
-    setMessages((m) => [...m, { role: 'user', text }]);
+    // Create the updated message log snapshot
+    const newUserMessage = { role: 'user', text };
+    const historicalSnapshot = [...messages, newUserMessage]; // 👈 3. Build Full Conversation Thread
+
+    // Push user message directly into UI
+    setMessages(historicalSnapshot);
     setInput('');
     setIsTyping(true);
 
     try {
-      // 4. Send request to Gemini with the real-time calculated values
+      // 🚀 1 & 3. Passing complete structural memory and macro text bulletins
       const reply = await sendMessage(text, { 
         baseCurrency, 
         targetCurrency,
         currentRate, 
-        rateTrend 
+        rateTrend,
+        newsFeed,         // 👈 Sent to LLM Context
+        history: historicalSnapshot // 👈 Sent for Conversational Memory
       });
       setMessages((m) => [...m, reply]);
     } catch (error) {
@@ -87,7 +102,7 @@ export default function ChatWidget() {
 
   return (
     <>
-      {/* MODERN FLOATING BUTTON */}
+      {/* FLOATING ACTION BUTTON */}
       <motion.button
         onClick={() => setIsOpen((v) => !v)}
         whileHover={{ scale: 1.05, y: -2 }}
@@ -107,7 +122,7 @@ export default function ChatWidget() {
         </AnimatePresence>
       </motion.button>
 
-      {/* CHAT WINDOW */}
+      {/* CHAT WINDOW INTERFACE */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -117,7 +132,7 @@ export default function ChatWidget() {
             transition={{ type: "spring", damping: 20, stiffness: 260 }}
             className="fixed bottom-24 right-6 z-50 w-[24rem] h-[500px] max-w-[calc(100vw-3rem)] rounded-2xl border border-white/10 bg-obsidian/95 backdrop-blur-xl shadow-2xl flex flex-col overflow-hidden font-sans"
           >
-            {/* Sleek, Premium Header */}
+            {/* Header */}
             <div className="flex items-center gap-3 px-5 py-4 border-b border-white/5 bg-white/[0.02]">
               <div className="relative">
                 <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-sapphireNeon to-emeraldNeon flex items-center justify-center text-void">
@@ -131,29 +146,41 @@ export default function ChatWidget() {
               </div>
             </div>
 
-            {/* Conversational Stream */}
+            {/* Message View Area */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 custom-scrollbar">
               {messages.map((m, i) => {
                 const isUser = m.role === 'user';
                 return (
                   <div key={i} className={`flex items-start gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                    {/* Bot Avatar */}
                     {!isUser && (
                       <div className="h-7 w-7 rounded-lg bg-white/5 border border-white/10 text-emeraldNeon flex items-center justify-center shrink-0">
                         <Bot size={14} />
                       </div>
                     )}
                     
-                    {/* Chat Bubble */}
                     <div className={`max-w-[78%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                       isUser 
                         ? 'bg-gradient-to-br from-sapphireNeon to-sapphireNeon/80 text-void font-semibold rounded-tr-none shadow-md' 
                         : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-none'
                     }`}>
-                      {m.text}
+                      {/* 👈 2. Renders plain text for user, sleek structured Markdown layout for AI advice */}
+                      {isUser ? (
+                        m.text
+                      ) : (
+                        <ReactMarkdown
+                          components={{
+                            p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+                            ul: ({ node, ...props }) => <ul className="list-disc pl-4 my-1.5 space-y-1" {...props} />,
+                            ol: ({ node, ...props }) => <ol className="list-decimal pl-4 my-1.5 space-y-1" {...props} />,
+                            li: ({ node, ...props }) => <li className="text-slate-200" {...props} />,
+                            strong: ({ node, ...props }) => <strong className="text-emeraldNeon font-semibold" {...props} />,
+                          }}
+                        >
+                          {m.text}
+                        </ReactMarkdown>
+                      )}
                     </div>
 
-                    {/* User Avatar */}
                     {isUser && (
                       <div className="h-7 w-7 rounded-lg bg-sapphireNeon/20 text-sapphireNeon flex items-center justify-center shrink-0 border border-sapphireNeon/20">
                         <User size={14} />
@@ -163,7 +190,7 @@ export default function ChatWidget() {
                 );
               })}
               
-              {/* Warm Thinking Indicator */}
+              {/* Typing Indicator */}
               {isTyping && (
                 <div className="flex items-start gap-3 justify-start">
                   <div className="h-7 w-7 rounded-lg bg-white/5 border border-white/10 text-emeraldNeon flex items-center justify-center shrink-0">
@@ -183,7 +210,7 @@ export default function ChatWidget() {
               <div ref={chatEndRef} />
             </div>
 
-            {/* Input Form */}
+            {/* Input Footer */}
             <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-white/5 p-4 bg-white/[0.01]">
               <input
                 value={input}
