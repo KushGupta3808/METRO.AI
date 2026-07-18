@@ -1,86 +1,64 @@
-// src/services/chatService.js
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Reads the key from your .env file — never hardcode it here.
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const genAI = new GoogleGenerativeAI(apiKey);
 
-// 🚀 The active model we are pointing to:
-const MODEL_NAME = "gemini-3.5-flash";
-
-/**
- * Sends chat messages directly to Google's Gemini LLM.
- */
-export async function sendMessage(userMessage, corridorContext = {}) {
-  const { 
-    baseCurrency = 'CAD', 
+export async function sendMessage(text, options = {}) {
+  const {
+    baseCurrency = 'CAD',
     targetCurrency = 'INR',
     currentRate = 'unknown',
-    rateTrend = 'stable'
-  } = corridorContext || {};
-
-  // Simple guard clause to prevent running with a missing key
-  if (!GEMINI_API_KEY) {
-    return {
-      role: 'assistant',
-      text: "⚠️ CONFIGURATION ERROR: VITE_GEMINI_API_KEY is missing. Add it to your .env file."
-    };
-  }
+    rateTrend = 'stable',
+    newsFeed = [],
+    history = []
+  } = options;
 
   const systemInstruction = `
-    You are Metro AI, a warm, highly empathetic human financial advisor and remittance expert. 
-    Your job is to help the user navigate sending money from ${baseCurrency} to ${targetCurrency}.
-    
-    The current exchange rate from ${baseCurrency} to ${targetCurrency} is exactly ${currentRate}.
-    The recent trend is ${rateTrend}.
-  
-    Use this real-time data to give highly accurate, contextual advice.
-    
-    CRITICAL RULES:
-    1. NEVER sound like a robot, system log, or machine.
-    2. Speak like a helpful, grounded peer. Use phrases like "If I were you...", "I'd suggest waiting...", or "Honestly, it looks like...".
-    3. Keep answers concise and conversational (max 2-3 short paragraphs).
+    You are Metro AI, an elite, highly intuitive digital remittance and FX co-pilot. Your tone is warm, peer-to-peer, professional, and grounded.
+
+    CURRENT REAL-TIME DASHBOARD CONTEXT:
+    - Active Trade Corridor: ${baseCurrency} to ${targetCurrency}
+    - Live Mid-Market Rate: ${currentRate} ${targetCurrency} per 1 ${baseCurrency}
+    - Current Vector Trend: The rate is moving in a ${rateTrend} direction lately.
+    - Local Market News Bulletins: ${JSON.stringify(newsFeed)}
+
+    OPERATIONAL EXECUTION RULES:
+    1. Always anchor your answers on the live rate (${currentRate}) and the vector trend (${rateTrend}).
+    2. Weave relevant news items naturally into your dialogue.
+    3. Format your advice with beautiful, clean Markdown. Use double asterisks (**word**) to emphasize crucial points. 
+    4. Use brief, bulleted lists for clear structural breakdowns.
   `;
 
-  const dynamicUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
-
   try {
-    const response = await fetch(dynamicUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: `${systemInstruction}\n\nUser Question: ${userMessage}` }]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1000,
-        }
-      })
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-3.5-flash',
+      systemInstruction: systemInstruction,
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const apiMessage = errorData.error?.message || `HTTP Status ${response.status}`;
-      throw new Error(`Google API rejected: ${apiMessage}`);
-    }
+    // 💡 FIX: Find where the user actually starts talking so we don't send an assistant message first
+    const firstUserIndex = history.findIndex(msg => msg.role === 'user');
+    
+    // Slice from the first user message up until (but excluding) the current input
+    const historyToFormat = firstUserIndex !== -1 ? history.slice(firstUserIndex, -1) : [];
 
-    const data = await response.json();
-    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const formattedHistory = historyToFormat.map((msg) => ({
+      role: msg.role === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.text }],
+    }));
+
+    const chat = model.startChat({
+      history: formattedHistory,
+    });
+
+    const result = await chat.sendMessage(text);
+    const responseText = result.response.text();
 
     return {
       role: 'assistant',
-      text: aiText || "I received an empty response. Try rephrasing!"
+      text: responseText,
     };
-
   } catch (error) {
-    console.error("Gemini API Error details:", error);
-    return {
-      role: 'assistant',
-      text: `❌ CONNECTION ERROR: ${error.message}`
-    };
+    console.error('Gemini API Error inside chatService:', error);
+    throw error;
   }
 }
