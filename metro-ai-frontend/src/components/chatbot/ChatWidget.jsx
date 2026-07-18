@@ -1,10 +1,10 @@
 import { useRef, useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MessageSquare, X, Send, Sparkles, User, Bot } from 'lucide-react';
-import ReactMarkdown from 'react-markdown'; // 👈 2. Markdown Parser Installed
+import ReactMarkdown from 'react-markdown';
 import { sendMessage } from '../../services/chatService';
 import { useCurrencyStore } from '../../store/useCurrencyStore';
-import { getRateSeries, getNewsFeed } from '../../services/marketService'; // 👈 1. News Feed Imported
+import { getRateSeries, getNewsFeed } from '../../services/marketService';
 
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
@@ -19,20 +19,19 @@ export default function ChatWidget() {
   
   const chatEndRef = useRef(null);
 
-  // Pull user preferences from your store
+  // Pull user preferences from store
   const { baseCurrency, targetCurrency } = useCurrencyStore();
 
   // Component States for live dynamic data
   const [currentRate, setCurrentRate] = useState('unknown');
   const [rateTrend, setRateTrend] = useState('stable');
-  const [newsFeed, setNewsFeed] = useState([]); // 👈 1. Added State for News Articles
+  const [newsFeed, setNewsFeed] = useState([]);
 
   // Synchronize dynamic financial context
   useEffect(() => {
     const base = baseCurrency || 'CAD';
     const target = targetCurrency || 'INR';
 
-    // Fetch Rate Metrics
     getRateSeries(base, target)
       .then((result) => {
         if (result?.series && result.series.length > 0) {
@@ -47,11 +46,8 @@ export default function ChatWidget() {
       })
       .catch((err) => console.error("Rates sync failed:", err));
 
-    // 👈 1. Fetch Related Market Bulletin News
     getNewsFeed(target)
-      .then((news) => {
-        setNewsFeed(news);
-      })
+      .then((news) => setNewsFeed(news))
       .catch((err) => console.error("News sync failed:", err));
 
   }, [baseCurrency, targetCurrency]);
@@ -61,29 +57,28 @@ export default function ChatWidget() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping, isOpen]);
 
-  async function handleSend(e) {
-    e.preventDefault();
-    const text = input.trim();
+  // 💡 1. Standalone Core Dispatch Function (used by both form & suggestion chips)
+  async function executeSend(textToSend) {
+    const text = textToSend.trim();
     if (!text) return;
 
     // Create the updated message log snapshot
     const newUserMessage = { role: 'user', text };
-    const historicalSnapshot = [...messages, newUserMessage]; // 👈 3. Build Full Conversation Thread
+    const historicalSnapshot = [...messages, newUserMessage];
 
-    // Push user message directly into UI
+    // Push user message directly into UI states
     setMessages(historicalSnapshot);
     setInput('');
     setIsTyping(true);
 
     try {
-      // 🚀 1 & 3. Passing complete structural memory and macro text bulletins
       const reply = await sendMessage(text, { 
         baseCurrency, 
         targetCurrency,
         currentRate, 
         rateTrend,
-        newsFeed,         // 👈 Sent to LLM Context
-        history: historicalSnapshot // 👈 Sent for Conversational Memory
+        newsFeed,         
+        history: historicalSnapshot 
       });
       setMessages((m) => [...m, reply]);
     } catch (error) {
@@ -98,6 +93,12 @@ export default function ChatWidget() {
     } finally {
       setIsTyping(false);
     }
+  }
+
+  // Handle traditional form button submissions
+  function handleFormSubmit(e) {
+    e.preventDefault();
+    executeSend(input);
   }
 
   return (
@@ -163,7 +164,6 @@ export default function ChatWidget() {
                         ? 'bg-gradient-to-br from-sapphireNeon to-sapphireNeon/80 text-void font-semibold rounded-tr-none shadow-md' 
                         : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-none'
                     }`}>
-                      {/* 👈 2. Renders plain text for user, sleek structured Markdown layout for AI advice */}
                       {isUser ? (
                         m.text
                       ) : (
@@ -210,8 +210,35 @@ export default function ChatWidget() {
               <div ref={chatEndRef} />
             </div>
 
+            {/* 💡 2. QUICK ACTION SUGGESTION CHIPS (Hidden while bot is actively typing) */}
+            {!isTyping && (
+              <div className="flex gap-2 overflow-x-auto px-5 pb-2 shrink-0 scrollbar-none custom-scrollbar">
+                <button
+                  type="button"
+                  onClick={() => executeSend(`Is right now an optimal time to make a transfer for ${baseCurrency || 'CAD'} to ${targetCurrency || 'INR'}?`)}
+                  className="shrink-0 text-[11px] font-medium bg-white/5 border border-white/10 text-slate-300 rounded-full px-3 py-1.5 hover:bg-sapphireNeon/10 hover:border-sapphireNeon/30 active:scale-95 transition-all duration-200"
+                >
+                  💡 Should I send now?
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executeSend(`Can you break down the current ${rateTrend} market trend for this pair?`)}
+                  className="shrink-0 text-[11px] font-medium bg-white/5 border border-white/10 text-slate-300 rounded-full px-3 py-1.5 hover:bg-sapphireNeon/10 hover:border-sapphireNeon/30 active:scale-95 transition-all duration-200"
+                >
+                  📈 Analyze trend
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executeSend("Give me a quick summary of the latest news bulletins affecting my trade.")}
+                  className="shrink-0 text-[11px] font-medium bg-white/5 border border-white/10 text-slate-300 rounded-full px-3 py-1.5 hover:bg-sapphireNeon/10 hover:border-sapphireNeon/30 active:scale-95 transition-all duration-200"
+                >
+                  📰 Summarize news
+                </button>
+              </div>
+            )}
+
             {/* Input Footer */}
-            <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-white/5 p-4 bg-white/[0.01]">
+            <form onSubmit={handleFormSubmit} className="flex items-center gap-2 border-t border-white/5 p-4 bg-white/[0.01]">
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
