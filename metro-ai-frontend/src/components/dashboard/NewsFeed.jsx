@@ -65,17 +65,17 @@ function NewsCard({ item, index }) {
 }
 
 export default function NewsFeed() {
-  const { targetCurrency } = useCurrencyStore();
+  const { baseCurrency, targetCurrency } = useCurrencyStore();
   const [items, setItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     setIsLoading(true);
-    getNewsFeed(targetCurrency || 'INR').then((data) => {
+    getNewsFeed(baseCurrency || 'CAD', targetCurrency || 'INR').then((data) => {
       setItems(data);
       setIsLoading(false);
     });
-  }, [targetCurrency]);
+  }, [baseCurrency, targetCurrency]);
 
   return (
     <div>
