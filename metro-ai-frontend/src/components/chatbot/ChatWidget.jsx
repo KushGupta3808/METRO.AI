@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { MessageSquare, X, Send, Sparkles, User, Bot } from 'lucide-react';
 import { sendMessage } from '../../services/chatService';
 import { useCurrencyStore } from '../../store/useCurrencyStore';
+import { getRateSeries } from '../../services/marketService'; // 👈 Import your market service
 
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
@@ -17,9 +18,34 @@ export default function ChatWidget() {
   
   const chatEndRef = useRef(null);
 
-  // 1. Pull your values dynamically from your store
-  const { baseCurrency, targetCurrency, currentRate, rateTrend } = useCurrencyStore();
+  // 1. Pull user preferences from your store
+  const { baseCurrency, targetCurrency } = useCurrencyStore();
 
+  // 2. Setup local states to capture the live rate and trend data
+  const [currentRate, setCurrentRate] = useState('unknown');
+  const [rateTrend, setRateTrend] = useState('stable');
+
+  // 3. Dynamically fetch market data whenever the user switches currencies
+  useEffect(() => {
+    getRateSeries(baseCurrency || 'CAD', targetCurrency || 'INR')
+      .then((result) => {
+        if (result?.series && result.series.length > 0) {
+          const rates = result.series.map((d) => d.rate);
+          const latest = rates[rates.length - 1];
+          const prev = rates[rates.length - 2] ?? latest;
+          const delta = latest - prev;
+
+          // Update local component states
+          setCurrentRate(latest.toFixed(3));
+          setRateTrend(delta > 0 ? 'upward' : delta < 0 ? 'downward' : 'stable');
+        }
+      })
+      .catch((err) => {
+        console.error("ChatWidget failed to sync live rates:", err);
+        setCurrentRate('unknown');
+        setRateTrend('stable');
+      });
+  }, [baseCurrency, targetCurrency]);
 
   // Bulletproof smooth scroll to the newest message
   useEffect(() => {
@@ -37,7 +63,7 @@ export default function ChatWidget() {
     setIsTyping(true);
 
     try {
-      // 2. Safely fetch the advice from the service inside this async block
+      // 4. Send request to Gemini with the real-time calculated values
       const reply = await sendMessage(text, { 
         baseCurrency, 
         targetCurrency,
