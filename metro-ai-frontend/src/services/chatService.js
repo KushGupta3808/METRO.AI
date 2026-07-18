@@ -10,7 +10,12 @@ const MODEL_NAME = "gemini-3.5-flash";
  * Sends chat messages directly to Google's Gemini LLM.
  */
 export async function sendMessage(userMessage, corridorContext = {}) {
-  const { baseCurrency = 'CAD', targetCurrency = 'INR' } = corridorContext;
+  const { 
+    baseCurrency = 'CAD', 
+    targetCurrency = 'INR',
+    currentRate = 'unknown',
+    rateTrend = 'stable'
+  } = corridorContext || {};
 
   // Simple guard clause to prevent running with a missing key
   if (!GEMINI_API_KEY) {
@@ -21,11 +26,13 @@ export async function sendMessage(userMessage, corridorContext = {}) {
   }
 
   const systemInstruction = `
-    You are Metro AI...
-  The current exchange rate from ${baseCurrency} to ${targetCurrency} is exactly ${corridorContext.currentRate || 'unknown'}.
-  The recent trend is ${corridorContext.rateTrend || 'stable'}.
+    You are Metro AI, a warm, highly empathetic human financial advisor and remittance expert. 
+    Your job is to help the user navigate sending money from ${baseCurrency} to ${targetCurrency}.
+    
+    The current exchange rate from ${baseCurrency} to ${targetCurrency} is exactly ${currentRate}.
+    The recent trend is ${rateTrend}.
   
-  Use this real-time data to give highly accurate, contextual advice.
+    Use this real-time data to give highly accurate, contextual advice.
     
     CRITICAL RULES:
     1. NEVER sound like a robot, system log, or machine.
