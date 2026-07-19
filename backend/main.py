@@ -5,6 +5,8 @@ import random
 import re
 from typing import List, Optional
 from contextlib import asynccontextmanager
+from fastapi.responses import StreamingResponse
+from google.genai import types
 
 
 from fastapi import FastAPI, HTTPException, Depends, Query, status, WebSocket, WebSocketDisconnect
@@ -191,6 +193,9 @@ class Transfer(Base):
 # ---------------------------------------------------------
 # 5. VALIDATION SCHEMAS
 # ---------------------------------------------------------
+class ChatStreamRequest(BaseModel):
+    text: str
+    options: dict = {}
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
@@ -308,6 +313,82 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
 # ---------------------------------------------------------
 
 # --- AUTHENTICATION ENDPOINTS ---
+# --- SECURE CHAT STREAMING PROXY ---
+@app.post("/api/v1/chat/stream")
+async def secure_chat_stream(req: ChatStreamRequest):
+    """
+    Acts as a secure server-side proxy for Gemini live text streams.
+    Keeps the API key safely contained inside the backend environment container.
+    """
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise HTTPException(
+            status_code=500, 
+            detail="Server configuration error: GEMINI_API_KEY is missing."
+        )
+    
+    # Extract frontend context options with default fallbacks
+    options = req.options
+    base_currency = options.get("baseCurrency", "CAD")
+    target_currency = options.get("targetCurrency", "INR")
+    current_rate = options.get("currentRate", "unknown")
+    rate_trend = options.get("rateTrend", "stable")
+    news_feed = options.get("newsFeed", [])
+    history = options.get("history", [])
+
+    # System instruction composition containing your operational rules
+    system_instruction = f"""
+    You are Metro AI, an elite, highly intuitive digital remittance and FX co-pilot. Your tone is warm, peer-to-peer, professional, and grounded.
+
+    CURRENT REAL-TIME DASHBOARD CONTEXT:
+    - Active Trade Corridor: {base_currency} to {target_currency}
+    - Live Mid-Market Rate: {current_rate} {target_currency} per 1 {base_currency}
+    - Current Vector Trend: The rate is moving in a {rate_trend} direction lately.
+    - Local Market News Bulletins: {json.dumps(news_feed)}
+
+    OPERATIONAL EXECUTION RULES:
+    1. Always anchor your answers on the live rate ({current_rate}) and the vector trend ({rate_trend}).
+    2. Weave relevant news items naturally into your dialogue.
+    3. Format your advice with beautiful, clean Markdown. Use double asterisks (**word**) to emphasize crucial points. 
+    4. Use brief, bulleted lists for clear structural breakdowns. Keep everything highly scannable.
+    """
+
+# Reconstruct the conversation context array for the Gemini API
+    contents = []
+    first_user_index = next((i for i, msg in enumerate(history) if msg.get("role") == "user"), -1)
+    history_to_format = history[first_user_index:-1] if first_user_index != -1 else []
+
+    for msg in history_to_format:
+        role = "user" if msg.get("role") == "user" else "model"
+        contents.append({"role": role, "parts": [{"text": msg.get("text")}]})
+
+    # Append the newest incoming prompt chunk
+    contents.append({"role": "user", "parts": [{"text": req.text}]})
+
+    # 🎯 INDENT THIS WHOLE BLOCK BY 4 SPACES:
+    # Async generator that yields text tokens as soon as they drop from Google's pipeline
+    async def event_generator():
+        try:
+            from google import genai
+            from google.genai import types 
+            
+            async with genai.Client().aio as aclient:
+                response_stream = await aclient.models.generate_content_stream(
+                    model="gemini-3.5-flash",
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction
+                    )
+                )
+                
+                async for chunk in response_stream:
+                    if chunk.text:
+                        yield chunk.text
+        except Exception as e:
+            yield f"\n[Terminal Stream Error: {str(e)}]"
+
+    # 🎯 This now correctly returns from secure_chat_stream, NOT event_generator!
+    return StreamingResponse(event_generator(), media_type="text/plain")
+
 @app.post("/api/v1/auth/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def signup(user: UserCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == user.email))

@@ -1,18 +1,28 @@
 # Python Environment & Build Output
 backend/venv/
 backend/.venv/
+**/venv/
+**/.venv/
 **/__pycache__/
 *.pyc
 
 # Local Database Files
 backend/metro_ai.db
 backend/metro_ai.db-journal
+*.db
+*.db-journal
 
-# Node Dependencies & Package Lock
-frontend/node_modules/
-frontend/dist/
-frontend/.env.local
+# Node Dependencies & Package Lock (Wildcards support both 'frontend/' and 'metro-ai-frontend/')
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.env.local
+**/.env.local
 
 # Operating System Files
 .DS_Store
 Thumbs.db
+
+# Environment variables (for later when we add private API keys)
+.env

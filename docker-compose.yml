@@ -1,4 +1,22 @@
 services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: metro_ai_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env  # 🔒 Safely injects your GEMINI_API_KEY from the root file
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://metro_admin:metro_secure_password_2026@db:5432/metro_ai_db
+      - METRO_AI_ENV=production
+      - METRO_AI_JWT_SECRET=super_secret_production_key_change_me_in_cloud
+    depends_on:
+      db:
+        condition: service_healthy
+
   db:
     image: postgres:16-alpine
     container_name: metro_ai_postgres
@@ -16,22 +34,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-  api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: metro_ai_backend
-    restart: always
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://metro_admin:metro_secure_password_2026@db:5432/metro_ai_db
-      - METRO_AI_ENV=production
-      - METRO_AI_JWT_SECRET=super_secret_production_key_change_me_in_cloud
-    depends_on:
-      db:
-        condition: service_healthy
 
 volumes:
   pgdata:
