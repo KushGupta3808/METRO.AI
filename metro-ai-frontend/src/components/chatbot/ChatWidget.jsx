@@ -6,6 +6,7 @@ import { sendMessage } from '../../services/chatService';
 import { useCurrencyStore } from '../../store/useCurrencyStore';
 import { getRateSeries, getNewsFeed } from '../../services/marketService';
 
+
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
