@@ -2,10 +2,9 @@ import { useRef, useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MessageSquare, X, Send, Sparkles, User, Bot } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { sendMessage } from '../../services/chatService';
+import { sendMessageStream } from '../../services/chatService'; // 🚀 Upgraded to streaming service
 import { useCurrencyStore } from '../../store/useCurrencyStore';
 import { getRateSeries, getNewsFeed } from '../../services/marketService';
-
 
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
@@ -58,7 +57,7 @@ export default function ChatWidget() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping, isOpen]);
 
-  // 💡 1. Standalone Core Dispatch Function (used by both form & suggestion chips)
+  // 💡 Upgraded Core Dispatch Function supporting real-time streaming data chunks
   async function executeSend(textToSend) {
     const text = textToSend.trim();
     if (!text) return;
@@ -73,7 +72,8 @@ export default function ChatWidget() {
     setIsTyping(true);
 
     try {
-      const reply = await sendMessage(text, { 
+      // 1. Await the streaming generator interface from Gemini SDK
+      const stream = await sendMessageStream(text, { 
         baseCurrency, 
         targetCurrency,
         currentRate, 
@@ -81,9 +81,32 @@ export default function ChatWidget() {
         newsFeed,         
         history: historicalSnapshot 
       });
-      setMessages((m) => [...m, reply]);
+
+      // 2. Shut off the bouncing typing indicator the moment data starts arriving
+      setIsTyping(false);
+
+      // 3. Inject a placeholder message into the display state for the upcoming assistant tokens
+      setMessages((m) => [...m, { role: 'assistant', text: '' }]);
+
+      // 4. Iterate through the string chunks as they land from Google's servers
+      for await (const chunk of stream) {
+        const chunkText = chunk.text();
+        
+        // Target the final item in the state log array and append text chunks iteratively
+        setMessages((prevMessages) => {
+          const updated = [...prevMessages];
+          const lastIdx = updated.length - 1;
+          
+          updated[lastIdx] = { 
+            ...updated[lastIdx], 
+            text: updated[lastIdx].text + chunkText 
+          };
+          return updated;
+        });
+      }
     } catch (error) {
-      console.error("Chat API Error:", error);
+      console.error("Chat Streaming API Error:", error);
+      setIsTyping(false);
       setMessages((m) => [
         ...m, 
         { 
@@ -91,8 +114,6 @@ export default function ChatWidget() {
           text: "I'm having a small trouble connecting to the network right now. Could you try sending that message again in a moment?" 
         }
       ]);
-    } finally {
-      setIsTyping(false);
     }
   }
 
@@ -211,7 +232,7 @@ export default function ChatWidget() {
               <div ref={chatEndRef} />
             </div>
 
-            {/* 💡 2. QUICK ACTION SUGGESTION CHIPS (Hidden while bot is actively typing) */}
+            {/* QUICK ACTION SUGGESTION CHIPS (Hidden while bot is actively typing) */}
             {!isTyping && (
               <div className="flex gap-2 overflow-x-auto px-5 pb-2 shrink-0 scrollbar-none custom-scrollbar">
                 <button
