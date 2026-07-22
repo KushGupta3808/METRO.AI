@@ -2,15 +2,13 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Lock, Loader2 } from 'lucide-react';
-import { login } from '../services/authService';
 import { useAuthStore } from '../store/useAuthStore';
 import { useCurrencyStore } from '../store/useCurrencyStore';
 import GlowButton from '../components/common/GlowButton';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const setAuth = useAuthStore((s) => s.login);
-  const hasOnboarded = useCurrencyStore((s) => s.hasOnboarded);
+  const login = useAuthStore((s) => s.login);
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -20,8 +18,16 @@ export default function LoginPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const { user, token } = await login(form);
-      setAuth(user, token);
+      // useAuthStore.login() does the real network call, stores the token,
+      // and - via checkAuthSession() - syncs this user's saved corridor
+      // into useCurrencyStore. It resolves to `true`, not { user, token },
+      // so there's nothing to destructure here; just await it and read
+      // fresh state afterward.
+      await login(form);
+
+      // Read hasOnboarded fresh via getState() rather than a hook value
+      // captured before login ran - the sync above only just happened.
+      const hasOnboarded = useCurrencyStore.getState().hasOnboarded;
       navigate(hasOnboarded ? '/dashboard' : '/onboarding');
     } catch (err) {
       setError(err.message);

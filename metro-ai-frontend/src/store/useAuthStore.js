@@ -1,24 +1,32 @@
 import { create } from 'zustand';
+import { useCurrencyStore } from './useCurrencyStore';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
 
 /**
- * Modern, clean, standard Zustand Auth Store.
- * Supports both named export: import { useAuthStore } from '...'
- * and default export: import useAuthStore from '...'
+ * Helper to safely extract error strings from FastAPI (handles both standard string details 
+ * and Pydantic 422 validation error arrays).
  */
+const parseFastAPIError = (errData) => {
+  if (!errData) return 'An unexpected error occurred';
+  if (typeof errData.detail === 'string') return errData.detail;
+  if (Array.isArray(errData.detail)) {
+    return errData.detail
+      .map((err) => `${err.loc ? err.loc.slice(1).join('.') : 'field'}: ${err.msg}`)
+      .join(' | ');
+  }
+  return typeof errData === 'string' ? errData : JSON.stringify(errData);
+};
+
 export const useAuthStore = create((set, get) => ({
   user: null,
   token: localStorage.getItem('token') || null,
   isAuthenticated: !!localStorage.getItem('token'),
   authLoading: false,
-  isInitialized: false, // Prevents router race conditions during initial app load
+  isInitialized: false,
 
   /**
-   * Complete signup sequence linking to the FastAPI /auth/signup endpoint.
-   * Auto-logs in the user upon successful creation.
-   * Supports both: signup(email, password, baseCurrency, targetCurrency)
-   * AND signup({ email, password, baseCurrency, targetCurrency })
+   * Complete signup sequence linking to FastAPI /auth/signup.
    */
   signup: async (emailOrObj, passwordArg, baseCurrency = 'CAD', targetCurrency = 'INR') => {
     let email = emailOrObj;
@@ -26,7 +34,6 @@ export const useAuthStore = create((set, get) => ({
     let base = baseCurrency;
     let target = targetCurrency;
 
-    // Handle object payload if passed directly from form submit handlers
     if (typeof emailOrObj === 'object' && emailOrObj !== null) {
       email = emailOrObj.email;
       password = emailOrObj.password;
@@ -36,13 +43,14 @@ export const useAuthStore = create((set, get) => ({
 
     console.log('[METRO AI AUTH] Initiating Signup sequence for email:', email);
     set({ authLoading: true });
+
     try {
       const response = await fetch(`${API_BASE_URL}/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
-          password,
+          email: String(email || '').trim(),
+          password: String(password || ''),
           base_currency: base,
           target_currency: target,
         }),
@@ -50,44 +58,56 @@ export const useAuthStore = create((set, get) => ({
 
       if (!response.ok) {
         const errData = await response.json();
-        console.error('[METRO AI AUTH] Signup rejected by backend:', errData);
-        throw new Error(errData.detail || 'Registration failed');
+        const errorMessage = parseFastAPIError(errData);
+        console.error('[METRO AI AUTH] Signup rejected by backend:', errorMessage);
+        throw new Error(errorMessage);
       }
 
       const createdUser = await response.json();
       console.log('[METRO AI AUTH] Signup successful! User created:', createdUser);
 
-      // Automatically authenticate user upon successful registration
-      console.log('[METRO AI AUTH] Triggering auto-login post-signup...');
+      // Auto-login post registration. NOTE: this resolves to `true` (a
+      // boolean), not { user, token } - callers should just await this and
+      // then read state from the store (get().user / get().token), not
+      // destructure the return value.
       return await get().login(email, password);
     } catch (error) {
-      console.error('[METRO AI AUTH] Signup exception encountered:', error);
+      console.error('[METRO AI AUTH] Signup exception encountered:', error.message || error);
       set({ authLoading: false });
       throw error;
     }
   },
 
   /**
-   * Handles user login, receives JWT access tokens, saves credentials locally,
-   * and populates active session parameters.
-   * Supports both: login(email, password) AND login({ email, password })
+   * Handles user login with OAuth2 x-www-form-urlencoded specification.
    */
   login: async (emailOrObj, passwordArg) => {
     let email = emailOrObj;
     let password = passwordArg;
 
-    // Handle object payload if passed directly from form submit handlers
     if (typeof emailOrObj === 'object' && emailOrObj !== null) {
       email = emailOrObj.email || emailOrObj.username;
       password = emailOrObj.password;
     }
 
+    email = String(email || '').trim();
+    password = String(password || '');
+
     console.log('[METRO AI AUTH] Initiating Login request for email:', email);
+
+    if (!email || !password) {
+      const missingErr = `Missing required credentials: ${!email ? 'email ' : ''}${!password ? 'password' : ''}`.trim();
+      console.error('[METRO AI AUTH]', missingErr);
+      set({ authLoading: false });
+      throw new Error(missingErr);
+    }
+
     set({ authLoading: true });
+
     try {
       const formData = new URLSearchParams();
-      formData.append('username', String(email || ''));
-      formData.append('password', String(password || ''));
+      formData.append('username', email);
+      formData.append('password', password);
 
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
@@ -97,8 +117,9 @@ export const useAuthStore = create((set, get) => ({
 
       if (!response.ok) {
         const errData = await response.json();
-        console.error('[METRO AI AUTH] Login credentials rejected:', errData);
-        throw new Error(errData.detail || 'Invalid username or password');
+        const errorMessage = parseFastAPIError(errData);
+        console.error('[METRO AI AUTH] Login credentials rejected:', errorMessage);
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -108,19 +129,17 @@ export const useAuthStore = create((set, get) => ({
       localStorage.setItem('token', token);
       set({ token, isAuthenticated: true });
 
-      // Fetch profile state directly to restore customized preferences
       await get().checkAuthSession();
       return true;
     } catch (error) {
-      console.error('[METRO AI AUTH] Login exception encountered:', error);
+      console.error('[METRO AI AUTH] Login exception encountered:', error.message || error);
       set({ authLoading: false });
       throw error;
     }
   },
 
   /**
-   * Triggers silent session checks. Performs token analysis and fetches profiles
-   * securely to populate frontend memory.
+   * Triggers silent session checks.
    */
   checkAuthSession: async () => {
     const token = get().token || localStorage.getItem('token');
@@ -146,14 +165,16 @@ export const useAuthStore = create((set, get) => ({
         
         set({ user, isAuthenticated: true });
 
-        // CRITICAL SYNC HOOK: Instantly inform useCurrencyStore of onboarding preferences
-        import('./useCurrencyStore').then((module) => {
-          const currencyStore = module.useCurrencyStore || module.default;
-          if (currencyStore && typeof currencyStore.getState === 'function') {
-            console.log('[METRO AI AUTH] Auto-syncing corridor preferences to Currency Store...');
-            currencyStore.getState().syncPreferences(user.base_currency, user.target_currency);
-          }
-        });
+        // Static import now, not a dynamic one - this used to be a
+        // fire-and-forget `.then()` with no `.catch()`, so if
+        // useCurrencyStore didn't have a `syncPreferences` method, this
+        // threw silently in the background and the onboarding redirect
+        // logic just quietly never fired. Calling it directly here means
+        // it runs synchronously as part of this same call, and any error
+        // surfaces immediately instead of vanishing into an unhandled
+        // rejection.
+        console.log('[METRO AI AUTH] Auto-syncing corridor preferences to Currency Store...');
+        useCurrencyStore.getState().syncPreferences(user.base_currency, user.target_currency);
 
       } else {
         console.warn('[METRO AI AUTH] Token rejected or expired by server (401/403). Clearing session...');
@@ -174,16 +195,7 @@ export const useAuthStore = create((set, get) => ({
     console.log('[METRO AI AUTH] Destroying active session token. Logging out...');
     localStorage.removeItem('token');
     set({ user: null, token: null, isAuthenticated: false, authLoading: false });
-    
-    // Clear onboarding status in sibling store
-    import('./useCurrencyStore').then((module) => {
-      const currencyStore = module.useCurrencyStore || module.default;
-      if (currencyStore && typeof currencyStore.getState === 'function') {
-        if (typeof currencyStore.getState().setOnboarded === 'function') {
-          currencyStore.getState().setOnboarded(false);
-        }
-      }
-    });
+    useCurrencyStore.getState().setOnboarded(false);
   },
 }));
 

@@ -1,15 +1,14 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, Lock, User, Loader2 } from 'lucide-react';
-import { signup } from '../services/authService';
+import { Mail, Lock, Loader2 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import GlowButton from '../components/common/GlowButton';
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const setAuth = useAuthStore((s) => s.login);
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const signup = useAuthStore((s) => s.signup);
+  const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -18,8 +17,11 @@ export default function SignupPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const { user, token } = await signup(form);
-      setAuth(user, token);
+      // useAuthStore.signup() creates the account then logs in
+      // automatically. It resolves to `true`, not { user, token } - there's
+      // nothing to destructure. A fresh signup always goes to onboarding,
+      // no need to check hasOnboarded here.
+      await signup(form);
       navigate('/onboarding');
     } catch (err) {
       setError(err.message);
@@ -44,17 +46,6 @@ export default function SignupPage() {
         <p className="text-sm text-slate-400 mb-6">Start routing smarter transfers</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="relative">
-            <User size={16} className="absolute left-3 top-3.5 text-slate-500" />
-            <input
-              type="text"
-              required
-              placeholder="Full name"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-3 text-sm text-slate-100 focus:outline-none focus:border-emeraldNeon/60"
-            />
-          </div>
           <div className="relative">
             <Mail size={16} className="absolute left-3 top-3.5 text-slate-500" />
             <input
