@@ -214,7 +214,9 @@ class ChatMessageResponse(BaseModel):
     created_at: datetime.datetime
 
     class Config:
-        from_attributes = Trueclass ChatStreamRequest(BaseModel):
+        from_attributes = True
+        
+class ChatStreamRequest(BaseModel):
     text: str
     options: dict = {}
 class UserCreate(BaseModel):
@@ -413,7 +415,7 @@ async def secure_chat_stream(req: ChatStreamRequest, db: AsyncSession = Depends(
             
             async with genai.Client().aio as aclient:
                 response_stream = await aclient.models.generate_content_stream(
-                    model="gemini-3.0-flash",
+                    model="gemini-2.5-flash",
                     contents=contents,
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction
