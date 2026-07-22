@@ -190,32 +190,11 @@ class Transfer(Base):
         default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     )
 
-class ChatMessage(Base):
-    __tablename__ = "chat_messages"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    session_id: Mapped[str] = mapped_column(default="default_session", index=True)
-    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True) # Optional for guest sessions
-    role: Mapped[str] = mapped_column(nullable=False) # 'user' or 'model'
-    text: Mapped[str] = mapped_column(nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, 
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-    )
 
 # ---------------------------------------------------------
 # 5. VALIDATION SCHEMAS
 # ---------------------------------------------------------
-class ChatMessageResponse(BaseModel):
-    id: int
-    session_id: str
-    role: str
-    text: str
-    created_at: datetime.datetime
-
-    class Config:
-        from_attributes = True
-        
 class ChatStreamRequest(BaseModel):
     text: str
     options: dict = {}
@@ -337,28 +316,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
 
 # --- AUTHENTICATION ENDPOINTS ---
 # --- SECURE CHAT STREAMING PROXY ---
-@app.get("/api/v1/chat/history", response_model=List[ChatMessageResponse])
-async def get_chat_history(
-    session_id: str = Query("default_session"),
-    limit: int = Query(50),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Fetches historical chat messages ordered chronologically to populate 
-    the frontend state on page load.
-    """
-    result = await db.execute(
-        select(ChatMessage)
-        .where(ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.created_at.asc())
-        .limit(limit)
-    )
-    return result.scalars().all()
-
 @app.post("/api/v1/chat/stream")
-async def secure_chat_stream(req: ChatStreamRequest, db: AsyncSession = Depends(get_db)):
+async def secure_chat_stream(req: ChatStreamRequest):
     """
-    Server-side proxy for Gemini live text streams with automated DB persistence.
+    Acts as a secure server-side proxy for Gemini live text streams.
+    Keeps the API key safely contained inside the backend environment container.
     """
     if not os.environ.get("GEMINI_API_KEY"):
         raise HTTPException(
@@ -366,8 +328,8 @@ async def secure_chat_stream(req: ChatStreamRequest, db: AsyncSession = Depends(
             detail="Server configuration error: GEMINI_API_KEY is missing."
         )
     
+    # Extract frontend context options with default fallbacks
     options = req.options
-    session_id = options.get("sessionId", "default_session")
     base_currency = options.get("baseCurrency", "CAD")
     target_currency = options.get("targetCurrency", "INR")
     current_rate = options.get("currentRate", "unknown")
@@ -375,11 +337,7 @@ async def secure_chat_stream(req: ChatStreamRequest, db: AsyncSession = Depends(
     news_feed = options.get("newsFeed", [])
     history = options.get("history", [])
 
-    # 1. Save user message to database
-    user_msg = ChatMessage(session_id=session_id, role="user", text=req.text)
-    db.add(user_msg)
-    await db.commit()
-
+    # System instruction composition containing your operational rules
     system_instruction = f"""
     You are Metro AI, an elite, highly intuitive digital remittance and FX co-pilot. Your tone is warm, peer-to-peer, professional, and grounded.
 
@@ -396,6 +354,7 @@ async def secure_chat_stream(req: ChatStreamRequest, db: AsyncSession = Depends(
     4. Use brief, bulleted lists for clear structural breakdowns. Keep everything highly scannable.
     """
 
+# Reconstruct the conversation context array for the Gemini API
     contents = []
     first_user_index = next((i for i, msg in enumerate(history) if msg.get("role") == "user"), -1)
     history_to_format = history[first_user_index:-1] if first_user_index != -1 else []
@@ -404,18 +363,19 @@ async def secure_chat_stream(req: ChatStreamRequest, db: AsyncSession = Depends(
         role = "user" if msg.get("role") == "user" else "model"
         contents.append({"role": role, "parts": [{"text": msg.get("text")}]})
 
+    # Append the newest incoming prompt chunk
     contents.append({"role": "user", "parts": [{"text": req.text}]})
 
-    # Async generator that streams tokens and persists the final response
+    # 🎯 INDENT THIS WHOLE BLOCK BY 4 SPACES:
+    # Async generator that yields text tokens as soon as they drop from Google's pipeline
     async def event_generator():
-        full_response_text = ""
         try:
             from google import genai
-            from google.genai import types
+            from google.genai import types 
             
             async with genai.Client().aio as aclient:
                 response_stream = await aclient.models.generate_content_stream(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.5-flash",
                     contents=contents,
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction
@@ -424,19 +384,11 @@ async def secure_chat_stream(req: ChatStreamRequest, db: AsyncSession = Depends(
                 
                 async for chunk in response_stream:
                     if chunk.text:
-                        full_response_text += chunk.text
                         yield chunk.text
-
-            # 2. Persist full model response upon stream completion
-            if full_response_text:
-                async with async_session_maker() as session:
-                    bot_msg = ChatMessage(session_id=session_id, role="model", text=full_response_text)
-                    session.add(bot_msg)
-                    await session.commit()
-
         except Exception as e:
             yield f"\n[Terminal Stream Error: {str(e)}]"
 
+    # 🎯 This now correctly returns from secure_chat_stream, NOT event_generator!
     return StreamingResponse(event_generator(), media_type="text/plain")
 
 @app.post("/api/v1/auth/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
