@@ -12,13 +12,29 @@ export const useAuthStore = create((set, get) => ({
   token: localStorage.getItem('token') || null,
   isAuthenticated: !!localStorage.getItem('token'),
   authLoading: false,
+  isInitialized: false, // Prevents router race conditions during initial app load
 
   /**
    * Complete signup sequence linking to the FastAPI /auth/signup endpoint.
    * Auto-logs in the user upon successful creation.
+   * Supports both: signup(email, password, baseCurrency, targetCurrency)
+   * AND signup({ email, password, baseCurrency, targetCurrency })
    */
-  signup: async (email, password, baseCurrency = 'CAD', targetCurrency = 'INR') => {
-    console.log('[METRO AI AUTH] Initiating Signup sequence for:', email);
+  signup: async (emailOrObj, passwordArg, baseCurrency = 'CAD', targetCurrency = 'INR') => {
+    let email = emailOrObj;
+    let password = passwordArg;
+    let base = baseCurrency;
+    let target = targetCurrency;
+
+    // Handle object payload if passed directly from form submit handlers
+    if (typeof emailOrObj === 'object' && emailOrObj !== null) {
+      email = emailOrObj.email;
+      password = emailOrObj.password;
+      base = emailOrObj.baseCurrency || emailOrObj.base_currency || 'CAD';
+      target = emailOrObj.targetCurrency || emailOrObj.target_currency || 'INR';
+    }
+
+    console.log('[METRO AI AUTH] Initiating Signup sequence for email:', email);
     set({ authLoading: true });
     try {
       const response = await fetch(`${API_BASE_URL}/auth/signup`, {
@@ -27,8 +43,8 @@ export const useAuthStore = create((set, get) => ({
         body: JSON.stringify({
           email,
           password,
-          base_currency: baseCurrency,
-          target_currency: targetCurrency,
+          base_currency: base,
+          target_currency: target,
         }),
       });
 
@@ -54,14 +70,24 @@ export const useAuthStore = create((set, get) => ({
   /**
    * Handles user login, receives JWT access tokens, saves credentials locally,
    * and populates active session parameters.
+   * Supports both: login(email, password) AND login({ email, password })
    */
-  login: async (email, password) => {
-    console.log('[METRO AI AUTH] Initiating Login request for:', email);
+  login: async (emailOrObj, passwordArg) => {
+    let email = emailOrObj;
+    let password = passwordArg;
+
+    // Handle object payload if passed directly from form submit handlers
+    if (typeof emailOrObj === 'object' && emailOrObj !== null) {
+      email = emailOrObj.email || emailOrObj.username;
+      password = emailOrObj.password;
+    }
+
+    console.log('[METRO AI AUTH] Initiating Login request for email:', email);
     set({ authLoading: true });
     try {
       const formData = new URLSearchParams();
-      formData.append('username', email);
-      formData.append('password', password);
+      formData.append('username', String(email || ''));
+      formData.append('password', String(password || ''));
 
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
@@ -93,19 +119,22 @@ export const useAuthStore = create((set, get) => ({
   },
 
   /**
-   * Triggers silent sessions checks. Performs token analysis and fetches profiles
+   * Triggers silent session checks. Performs token analysis and fetches profiles
    * securely to populate frontend memory.
    */
   checkAuthSession: async () => {
     const token = get().token || localStorage.getItem('token');
+    
     if (!token) {
       console.log('[METRO AI AUTH] Session check skipped: No local token detected.');
-      set({ isAuthenticated: false, user: null, authLoading: false });
+      get().logout();
+      set({ isInitialized: true, authLoading: false });
       return;
     }
 
     console.log('[METRO AI AUTH] Verifying token validity with secure profile endpoint...');
     set({ authLoading: true });
+    
     try {
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -115,10 +144,9 @@ export const useAuthStore = create((set, get) => ({
         const user = await response.json();
         console.log('[METRO AI AUTH] Session check approved! Active User:', user);
         
-        set({ user, isAuthenticated: true, authLoading: false });
+        set({ user, isAuthenticated: true });
 
         // CRITICAL SYNC HOOK: Instantly inform useCurrencyStore of onboarding preferences
-        // to automatically bypass the onboarding page router block!
         import('./useCurrencyStore').then((module) => {
           const currencyStore = module.useCurrencyStore || module.default;
           if (currencyStore && typeof currencyStore.getState === 'function') {
@@ -128,12 +156,14 @@ export const useAuthStore = create((set, get) => ({
         });
 
       } else {
-        console.warn('[METRO AI AUTH] Token rejected or expired by server. Clearing session parameters...');
+        console.warn('[METRO AI AUTH] Token rejected or expired by server (401/403). Clearing session...');
         get().logout();
       }
     } catch (error) {
-      set({ authLoading: false });
       console.error('[METRO AI AUTH] Session check failed to connect to host:', error);
+      get().logout();
+    } finally {
+      set({ isInitialized: true, authLoading: false });
     }
   },
 
@@ -149,7 +179,9 @@ export const useAuthStore = create((set, get) => ({
     import('./useCurrencyStore').then((module) => {
       const currencyStore = module.useCurrencyStore || module.default;
       if (currencyStore && typeof currencyStore.getState === 'function') {
-        currencyStore.getState().setOnboarded(false);
+        if (typeof currencyStore.getState().setOnboarded === 'function') {
+          currencyStore.getState().setOnboarded(false);
+        }
       }
     });
   },

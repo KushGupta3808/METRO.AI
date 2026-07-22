@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import IntroVideo from './components/intro/IntroVideo';
 import Loader3D from './components/loader/Loader3D';
 import AppRouter from './router/AppRouter';
+import { useAuthStore } from './store/useAuthStore'; // 👈 Adjust path if in ./store/useAuthStore
 
 const BOOT_KEY = 'metro-ai-boot-seen';
 
@@ -17,6 +18,12 @@ export default function App() {
   // 'intro' -> 'loading' -> 'app'. Gated by sessionStorage so returning
   // users within the same tab session land straight on the app.
   const [stage, setStage] = useState(getInitialStage);
+  const checkAuthSession = useAuthStore((state) => state.checkAuthSession);
+
+  // 🔒 Run token verification as soon as the app mounts
+  useEffect(() => {
+    checkAuthSession();
+  }, [checkAuthSession]);
 
   function finishBoot() {
     sessionStorage.setItem(BOOT_KEY, '1');
