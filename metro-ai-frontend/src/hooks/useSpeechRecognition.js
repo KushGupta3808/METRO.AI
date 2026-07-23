@@ -15,10 +15,12 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 // your audio is sent to Google's or Apple's servers to be transcribed, not
 // processed fully on-device. That's a browser/OS-level behavior, not
 // something this hook (or your backend) controls.
-export function useSpeechRecognition({ onFinalResult, lang = 'en-US' } = {}) {
+export function useSpeechRecognition({ onFinalResult, onInterimResult, lang = 'en-US' } = {}) {
   const recognitionRef = useRef(null);
   const onFinalResultRef = useRef(onFinalResult);
+  const onInterimResultRef = useRef(onInterimResult);
   onFinalResultRef.current = onFinalResult; // always the latest, no stale-closure risk
+  onInterimResultRef.current = onInterimResult;
 
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
@@ -52,6 +54,7 @@ export function useSpeechRecognition({ onFinalResult, lang = 'en-US' } = {}) {
         onFinalResultRef.current?.(final.trim());
       } else {
         setInterimTranscript(interim);
+        onInterimResultRef.current?.(interim);
       }
     };
 
