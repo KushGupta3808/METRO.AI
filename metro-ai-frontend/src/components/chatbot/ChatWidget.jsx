@@ -65,15 +65,13 @@ export default function ChatWidget() {
   const {
     isSupported: isVoiceInputSupported,
     isListening,
-    interimTranscript,
     error: voiceInputError,
     startListening,
     stopListening,
-  } = useSpeechRecognition({ onFinalResult: (finalText) => setInput(finalText) });
-
-  useEffect(() => {
-    if (isListening) setInput(interimTranscript);
-  }, [interimTranscript, isListening]);
+  } = useSpeechRecognition({
+    onInterimResult: (text) => setInput(text),
+    onFinalResult: (text) => setInput(text),
+  });
 
   // Stop any listening/speaking the moment the widget is closed.
   useEffect(() => {
