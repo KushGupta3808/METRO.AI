@@ -1,10 +1,15 @@
 import { useRef, useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { MessageSquare, X, Send, Sparkles, User, Bot } from 'lucide-react';
+import { MessageSquare, X, Send, Sparkles, User, Bot, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { sendMessageStream } from '../../services/chatService'; // 🚀 Upgraded to streaming service
+import { sendMessageStream } from '../../services/chatService';
 import { useCurrencyStore } from '../../store/useCurrencyStore';
 import { getRateSeries, getNewsFeed } from '../../services/marketService';
+import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
+import { stripMarkdownForSpeech } from '../../utils/stripMarkdownForSpeech';
+
+const VOICE_PREF_KEY = 'metro-ai-voice-replies-enabled';
+const isSpeechSynthesisSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
@@ -27,6 +32,56 @@ export default function ChatWidget() {
   const [rateTrend, setRateTrend] = useState('stable');
   const [newsFeed, setNewsFeed] = useState([]);
 
+  // Voice replies (text-to-speech) - defaults on, remembered per browser.
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const saved = localStorage.getItem(VOICE_PREF_KEY);
+    return saved === null ? true : saved === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem(VOICE_PREF_KEY, String(isVoiceEnabled));
+  }, [isVoiceEnabled]);
+
+  function speak(markdownText) {
+    if (!isSpeechSynthesisSupported || !markdownText.trim()) return;
+    window.speechSynthesis.cancel(); // don't let replies overlap
+    const utterance = new SpeechSynthesisUtterance(stripMarkdownForSpeech(markdownText));
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function toggleVoiceReplies() {
+    setIsVoiceEnabled((prev) => {
+      const next = !prev;
+      if (!next && isSpeechSynthesisSupported) window.speechSynthesis.cancel();
+      return next;
+    });
+  }
+
+  // Voice input (speech-to-text). Deliberately populates the input box
+  // rather than auto-sending - for a finance app, a misheard amount or
+  // currency ("500" heard as "5000") should get a chance to be reviewed
+  // before it's sent anywhere, not fired off automatically.
+  const {
+    isSupported: isVoiceInputSupported,
+    isListening,
+    interimTranscript,
+    error: voiceInputError,
+    startListening,
+    stopListening,
+  } = useSpeechRecognition({ onFinalResult: (finalText) => setInput(finalText) });
+
+  useEffect(() => {
+    if (isListening) setInput(interimTranscript);
+  }, [interimTranscript, isListening]);
+
+  // Stop any listening/speaking the moment the widget is closed.
+  useEffect(() => {
+    if (isOpen) return;
+    if (isListening) stopListening();
+    if (isSpeechSynthesisSupported) window.speechSynthesis.cancel();
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Synchronize dynamic financial context
   useEffect(() => {
     const base = baseCurrency || 'CAD';
@@ -46,7 +101,7 @@ export default function ChatWidget() {
       })
       .catch((err) => console.error("Rates sync failed:", err));
 
-    getNewsFeed(target)
+    getNewsFeed(base, target)
       .then((news) => setNewsFeed(news))
       .catch((err) => console.error("News sync failed:", err));
 
@@ -88,9 +143,14 @@ export default function ChatWidget() {
       // 3. Inject a placeholder message into the display state for the upcoming assistant tokens
       setMessages((m) => [...m, { role: 'assistant', text: '' }]);
 
-      // 4. Iterate through the string chunks as they land from Google's servers
+      // 4. Iterate through the string chunks as they land from Google's servers,
+      //    keeping a local accumulator alongside the state updates so the
+      //    complete text is available for TTS the moment the stream ends -
+      //    reading it back from state here would risk a stale closure.
+      let fullText = '';
       for await (const chunk of stream) {
         const chunkText = chunk.text();
+        fullText += chunkText;
         
         // Target the final item in the state log array and append text chunks iteratively
         setMessages((prevMessages) => {
@@ -104,6 +164,8 @@ export default function ChatWidget() {
           return updated;
         });
       }
+
+      if (isVoiceEnabled) speak(fullText);
     } catch (error) {
       console.error("Chat Streaming API Error:", error);
       setIsTyping(false);
@@ -121,6 +183,15 @@ export default function ChatWidget() {
   function handleFormSubmit(e) {
     e.preventDefault();
     executeSend(input);
+  }
+
+  function handleMicClick() {
+    if (isListening) {
+      stopListening();
+    } else {
+      if (isSpeechSynthesisSupported) window.speechSynthesis.cancel(); // don't listen over a reply
+      startListening();
+    }
   }
 
   return (
@@ -163,10 +234,22 @@ export default function ChatWidget() {
                 </div>
                 <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emeraldNeon border-2 border-obsidian" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="text-sm font-semibold text-slate-100 tracking-tight">Metro AI Assistant</h3>
                 <p className="text-[10px] text-slate-400 font-medium">Your personal remittance co-pilot</p>
               </div>
+              {isSpeechSynthesisSupported && (
+                <button
+                  type="button"
+                  onClick={toggleVoiceReplies}
+                  title={isVoiceEnabled ? 'Voice replies on - click to mute' : 'Voice replies off - click to enable'}
+                  className={`shrink-0 p-2 rounded-lg transition-colors ${
+                    isVoiceEnabled ? 'text-emeraldNeon bg-emeraldNeon/10' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  {isVoiceEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+                </button>
+              )}
             </div>
 
             {/* Message View Area */}
@@ -181,7 +264,7 @@ export default function ChatWidget() {
                       </div>
                     )}
                     
-                    <div className={`max-w-[78%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                    <div className={`group relative max-w-[78%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                       isUser 
                         ? 'bg-gradient-to-br from-sapphireNeon to-sapphireNeon/80 text-void font-semibold rounded-tr-none shadow-md' 
                         : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-none'
@@ -189,17 +272,29 @@ export default function ChatWidget() {
                       {isUser ? (
                         m.text
                       ) : (
-                        <ReactMarkdown
-                          components={{
-                            p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
-                            ul: ({ node, ...props }) => <ul className="list-disc pl-4 my-1.5 space-y-1" {...props} />,
-                            ol: ({ node, ...props }) => <ol className="list-decimal pl-4 my-1.5 space-y-1" {...props} />,
-                            li: ({ node, ...props }) => <li className="text-slate-200" {...props} />,
-                            strong: ({ node, ...props }) => <strong className="text-emeraldNeon font-semibold" {...props} />,
-                          }}
-                        >
-                          {m.text}
-                        </ReactMarkdown>
+                        <>
+                          <ReactMarkdown
+                            components={{
+                              p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+                              ul: ({ node, ...props }) => <ul className="list-disc pl-4 my-1.5 space-y-1" {...props} />,
+                              ol: ({ node, ...props }) => <ol className="list-decimal pl-4 my-1.5 space-y-1" {...props} />,
+                              li: ({ node, ...props }) => <li className="text-slate-200" {...props} />,
+                              strong: ({ node, ...props }) => <strong className="text-emeraldNeon font-semibold" {...props} />,
+                            }}
+                          >
+                            {m.text}
+                          </ReactMarkdown>
+                          {isSpeechSynthesisSupported && m.text && (
+                            <button
+                              type="button"
+                              onClick={() => speak(m.text)}
+                              title="Read this message aloud"
+                              className="absolute -bottom-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-full bg-obsidian border border-white/10 text-slate-400 hover:text-emeraldNeon"
+                            >
+                              <Volume2 size={11} />
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
 
@@ -259,15 +354,38 @@ export default function ChatWidget() {
               </div>
             )}
 
+            {voiceInputError && (
+              <p className="px-5 pb-1 text-[11px] font-mono text-amberNeon">{voiceInputError}</p>
+            )}
+
             {/* Input Footer */}
             <form onSubmit={handleFormSubmit} className="flex items-center gap-2 border-t border-white/5 p-4 bg-white/[0.01]">
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about exchange rates, trends, or when to send..."
+                placeholder={isListening ? 'Listening...' : 'Ask about exchange rates, trends, or when to send...'}
                 disabled={isTyping}
                 className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sapphireNeon/50 focus:ring-1 focus:ring-sapphireNeon/30 transition-all disabled:opacity-50"
               />
+              <button
+                type="button"
+                onClick={handleMicClick}
+                disabled={!isVoiceInputSupported || isTyping}
+                title={
+                  !isVoiceInputSupported
+                    ? "Voice input isn't supported in this browser - try Chrome, Edge, or Safari."
+                    : isListening
+                      ? 'Stop listening'
+                      : 'Speak your message'
+                }
+                className={`shrink-0 p-3 rounded-xl border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                  isListening
+                    ? 'bg-red-500/20 border-red-500/40 text-red-400 animate-pulse'
+                    : 'bg-white/5 border-white/10 text-slate-300 hover:border-sapphireNeon/40 hover:text-sapphireNeon'
+                }`}
+              >
+                {isListening ? <MicOff size={14} /> : <Mic size={14} />}
+              </button>
               <button 
                 type="submit" 
                 disabled={!input.trim() || isTyping}
