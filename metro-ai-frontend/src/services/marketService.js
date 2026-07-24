@@ -11,6 +11,33 @@
 
 const FX_API_BASE = 'https://api.frankfurter.dev/v2';
 
+// RateGraph and NewsFeed both call getRateSeries() for the same base/target
+// on every Dashboard mount (NewsFeed needs it internally for its "Rates"
+// card). Without this, that's two separate network round-trips to
+// Frankfurter for identical data every single load. This cache shares one
+// in-flight request between simultaneous callers, and reuses the result
+// for a short window afterward - short enough that live rates never look
+// stale, long enough to kill the duplicate-fetch on every page visit.
+const seriesCache = new Map();
+const CACHE_TTL_MS = 60_000;
+
+function getCached(key) {
+  const entry = seriesCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    seriesCache.delete(key);
+    return null;
+  }
+  return entry.promise;
+}
+
+function setCached(key, promise) {
+  seriesCache.set(key, { promise, timestamp: Date.now() });
+  // Don't cache failed lookups - a transient network blip shouldn't lock
+  // in a rejected promise for the next 60 seconds.
+  promise.catch(() => seriesCache.delete(key));
+}
+
 // Selectable chart ranges. `group` uses Frankfurter's server-side
 // downsampling (week/month) for the longer ranges - a 5-year daily pull
 // would be ~1,825 points, which is a lot to hand to a chart library and a
@@ -70,28 +97,37 @@ function generateSimulatedSeries(base, target, range) {
 // request fails for any reason.
 export async function getRateSeries(base, target, rangeKey = '1M') {
   const range = resolveRange(rangeKey);
+  const cacheKey = `${base}|${target}|${range.key}`;
 
-  try {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - range.days);
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
 
-    const params = new URLSearchParams({ base, quotes: target, from: formatDate(start), to: formatDate(end) });
-    if (range.group) params.set('group', range.group);
+  const promise = (async () => {
+    try {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - range.days);
 
-    const response = await fetch(`${FX_API_BASE}/rates?${params.toString()}`);
-    if (!response.ok) throw new Error(`FX API responded ${response.status}`);
+      const params = new URLSearchParams({ base, quotes: target, from: formatDate(start), to: formatDate(end) });
+      if (range.group) params.set('group', range.group);
 
-    const rows = await response.json();
-    const series = rows
-      .filter((row) => row.rate != null)
-      .map((row) => ({ date: formatDateLabel(row.date, range), rate: Number(row.rate.toFixed(4)) }));
+      const response = await fetch(`${FX_API_BASE}/rates?${params.toString()}`);
+      if (!response.ok) throw new Error(`FX API responded ${response.status}`);
 
-    if (!series.length) throw new Error('No rate data returned for this pair');
-    return { isLive: true, series, rangeKey: range.key };
-  } catch (err) {
-    return { isLive: false, series: generateSimulatedSeries(base, target, range), rangeKey: range.key };
-  }
+      const rows = await response.json();
+      const series = rows
+        .filter((row) => row.rate != null)
+        .map((row) => ({ date: formatDateLabel(row.date, range), rate: Number(row.rate.toFixed(4)) }));
+
+      if (!series.length) throw new Error('No rate data returned for this pair');
+      return { isLive: true, series, rangeKey: range.key };
+    } catch (err) {
+      return { isLive: false, series: generateSimulatedSeries(base, target, range), rangeKey: range.key };
+    }
+  })();
+
+  setCached(cacheKey, promise);
+  return promise;
 }
 
 // A single current rate - used by the Compare Engine's demo fallback so
