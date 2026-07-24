@@ -44,7 +44,11 @@ export default function Loader3D({ onComplete }) {
 
   useEffect(() => {
     const start = performance.now();
-    const duration = 2600;
+    // Was 2600ms - a fixed delay every single session adds up fast when
+    // it's pure animation time with no relationship to whether anything
+    // is actually still loading. Kept short enough to still read as a
+    // deliberate "boot sequence" moment rather than an instant flash.
+    const duration = 1200;
     let frame;
 
     const tick = (now) => {
