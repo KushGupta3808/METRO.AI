@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Activity } from 'lucide-react';
-import { getRateSeries } from '../../services/marketService';
+import { getRateSeries, RATE_RANGE_OPTIONS } from '../../services/marketService';
 import { useCurrencyStore } from '../../store/useCurrencyStore';
 
 function RateGraphSkeleton() {
@@ -36,20 +36,44 @@ function StatChip({ label, value, icon, tone }) {
   );
 }
 
+function RangeSelector({ selected, onSelect }) {
+  return (
+    <div className="inline-flex rounded-xl border border-white/10 bg-white/[0.02] p-1">
+      {RATE_RANGE_OPTIONS.map((range) => (
+        <button
+          key={range.key}
+          type="button"
+          onClick={() => onSelect(range.key)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+            selected === range.key
+              ? 'bg-sapphireNeon/15 text-sapphireNeon'
+              : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          {range.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function RateGraph() {
   const { baseCurrency, targetCurrency } = useCurrencyStore();
+  const [selectedRange, setSelectedRange] = useState('1M');
   const [data, setData] = useState([]);
   const [isLive, setIsLive] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     setIsLoading(true);
-    getRateSeries(baseCurrency || 'CAD', targetCurrency || 'INR').then((result) => {
+    getRateSeries(baseCurrency || 'CAD', targetCurrency || 'INR', selectedRange).then((result) => {
       setData(result.series);
       setIsLive(result.isLive);
       setIsLoading(false);
     });
-  }, [baseCurrency, targetCurrency]);
+  }, [baseCurrency, targetCurrency, selectedRange]);
+
+  const rangeLabel = RATE_RANGE_OPTIONS.find((r) => r.key === selectedRange)?.label ?? selectedRange;
 
   if (isLoading || !data.length) return <RateGraphSkeleton />;
 
@@ -65,28 +89,31 @@ export default function RateGraph() {
 
   return (
     <div className="glass-panel p-5 md:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-2">
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
         <div>
           <p className="text-xs font-mono uppercase tracking-wider text-slate-400">
             {baseCurrency || 'CAD'} / {targetCurrency || 'INR'}
           </p>
           <p className="font-display text-3xl text-slate-100">{latest.toFixed(3)}</p>
         </div>
-        <div
-          className={`flex items-center gap-1 text-sm font-mono px-2.5 py-1 rounded-full ${
-            isUp ? 'text-emeraldNeon bg-emeraldNeon/10' : 'text-amberNeon bg-amberNeon/10'
-          }`}
-        >
-          {isUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-          {Math.abs(delta).toFixed(3)}
+        <div className="flex items-center gap-3">
+          <div
+            className={`flex items-center gap-1 text-sm font-mono px-2.5 py-1 rounded-full ${
+              isUp ? 'text-emeraldNeon bg-emeraldNeon/10' : 'text-amberNeon bg-amberNeon/10'
+            }`}
+          >
+            {isUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+            {Math.abs(delta).toFixed(3)}
+          </div>
+          <RangeSelector selected={selectedRange} onSelect={setSelectedRange} />
         </div>
       </div>
 
       <div className="mb-6">
         {isLive ? (
           <span className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-emeraldNeon">
-            <span className="h-1.5 w-1.5 rounded-full bg-emeraldNeon animate-pulse" /> Live rates - Frankfurter (ECB
-            data)
+            <span className="h-1.5 w-1.5 rounded-full bg-emeraldNeon animate-pulse" /> Live rates - Frankfurter
+            (multi-bank data)
           </span>
         ) : (
           <span className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500">
@@ -97,11 +124,11 @@ export default function RateGraph() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <StatChip label="30D High" value={high.toFixed(3)} icon={<ArrowUp size={13} />} tone="emerald" />
-        <StatChip label="30D Low" value={low.toFixed(3)} icon={<ArrowDown size={13} />} tone="amber" />
-        <StatChip label="30D Avg" value={avg.toFixed(3)} icon={<Activity size={13} />} tone="sapphire" />
+        <StatChip label={`${rangeLabel} High`} value={high.toFixed(3)} icon={<ArrowUp size={13} />} tone="emerald" />
+        <StatChip label={`${rangeLabel} Low`} value={low.toFixed(3)} icon={<ArrowDown size={13} />} tone="amber" />
+        <StatChip label={`${rangeLabel} Avg`} value={avg.toFixed(3)} icon={<Activity size={13} />} tone="sapphire" />
         <StatChip
-          label="30D Change"
+          label={`${rangeLabel} Change`}
           value={`${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`}
           icon={changePct >= 0 ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
           tone={changePct >= 0 ? 'emerald' : 'amber'}
@@ -118,7 +145,7 @@ export default function RateGraph() {
               </linearGradient>
             </defs>
             <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-            <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+            <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={30} />
             <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
             <Tooltip
               contentStyle={{ background: '#122240', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }}
