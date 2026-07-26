@@ -1,37 +1,48 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Loader2, ArrowRight } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { getCompare } from '../../services/compareService';
 import { getLatestRate } from '../../services/marketService';
+import { getRecipients } from '../../services/recipientsService';
+import { createTransfer } from '../../services/transfersService';
+import { getProviderUrl } from '../../utils/providers';
+import { ALL_CURRENCIES } from '../../constants/currencies';
 import { useCurrencyStore } from '../../store/useCurrencyStore';
 import AIRecommendationBanner from './AIRecommendationBanner';
 import RouteCard from './RouteCard';
-import { createTransfer } from '../../services/transfersService';
 
-const CURRENCIES = ['CAD', 'USD', 'GBP', 'EUR', 'AUD'];
-const TARGET_CURRENCIES = ['INR', 'PKR', 'PHP', 'MXN', 'NGN', 'CNY'];
 const PAYOUT_METHODS = ['Bank Deposit', 'Cash Pickup', 'Mobile Wallet'];
 
-// ➡️ Map providers strictly to their official homepages to prevent relative/broken path redirection errors
-const PROVIDER_HOMEPAGES = {
-  wise: 'https://wise.com',
-  remitly: 'https://www.remitly.com',
-  xoom: 'https://www.xoom.com',
-  worldremit: 'https://www.worldremit.com',
-  'western union': 'https://www.westernunion.com',
-};
-
+// Used only when the real /api/v1/compare backend isn't reachable. Field
+// names match the real route schema exactly (mid_market_rate, fixed_fee,
+// transfer_time_days, etc.) so RouteCard never has to special-case mock
+// vs. real data. redirection_url is left null here on purpose - the send
+// handler below falls back to utils/providers.js for demo-mode sends.
 async function buildMockResponse({ source, target, amount }) {
   const { rate: baseRate, isLive } = await getLatestRate(source, target);
   const numericAmount = Number(amount) || 1000;
-  const providers = ['Wise', 'Remitly', 'Xoom', 'WorldRemit'];
-  const routes = providers.map((provider_name, i) => {
-    const rate = baseRate * (1 - i * 0.006 - Math.random() * 0.003);
+  const providers = [
+    { name: 'Wise', margin: 0.003, fee: 2.99, days: 1 },
+    { name: 'Remitly', margin: 0.009, fee: 0, days: 2 },
+    { name: 'WorldRemit', margin: 0.008, fee: 3.99, days: 1 },
+    { name: 'Western Union', margin: 0.015, fee: 4.99, days: 3 },
+  ];
+
+  const routes = providers.map((p) => {
+    const rate = baseRate * (1 - p.margin);
     return {
-      provider_name,
-      exchange_rate: rate.toFixed(3),
-      total_delivery_amount: (numericAmount * rate * (0.995 - i * 0.004)).toFixed(2),
-      delivery_time: ['Minutes', 'Within hours', '1 business day', '1-2 business days'][i],
+      provider_name: p.name,
+      payout_method: 'bank',
+      exchange_rate: Number(rate.toFixed(4)),
+      mid_market_rate: Number(baseRate.toFixed(4)),
+      margin_percentage: Number((p.margin * 100).toFixed(2)),
+      fixed_fee: p.fee,
+      transfer_time_days: p.days,
+      total_delivery_amount: Number(((numericAmount - p.fee) * rate).toFixed(2)),
+      requires_kyc_verification: false,
+      regulatory_warning: null,
+      redirection_url: null,
     };
   });
 
@@ -39,12 +50,13 @@ async function buildMockResponse({ source, target, amount }) {
     routes: routes.sort((a, b) => b.total_delivery_amount - a.total_delivery_amount),
     ai_recommendation: Math.random() > 0.4 ? 'SEND' : 'HOLD',
     ai_analysis_summary: isLive
-      ? `Sample routing - ${source} to ${target} is priced off today's real mid-market rate, with providers modeled at a small margin below it. Connect the FastAPI backend for real Gemini-generated analysis.`
-      : `Sample data - ${source} to ${target} isn't covered by our live rate feed, so this is fully simulated. Connect the FastAPI backend to see live Gemini-generated analysis.`,
+      ? `Sample routing - ${source} to ${target} is priced off today's real mid-market rate. Your backend is unreachable right now, so this is a local simulation, not its Gemini analysis.`
+      : `Sample data - ${source} to ${target} isn't covered by the live rate feed either, so this is fully simulated.`,
   };
 }
 
 export default function CompareEngine() {
+  const navigate = useNavigate();
   const { baseCurrency, targetCurrency } = useCurrencyStore();
   const [form, setForm] = useState({
     source: baseCurrency || 'CAD',
@@ -53,94 +65,27 @@ export default function CompareEngine() {
     payoutMethod: PAYOUT_METHODS[0],
   });
   const [result, setResult] = useState(null);
-  const [selectedRoute, setSelectedRoute] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isDemoData, setIsDemoData] = useState(false);
 
-  // ➡️ UPDATED REDIRECTION HANDLER (Uses clean, absolute homepages)
-  const handleSendRedirect = async (route) => {
-    const providerKey = route.provider_name.toLowerCase().trim();
-    
-    // Always resolve to the clean homepage URL mapping (guarantees no relative path "not found" errors)
-    const targetUrl = PROVIDER_HOMEPAGES[providerKey] || `https://www.${providerKey}.com`;
-    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+  const [recipients, setRecipients] = useState([]);
+  const [recipientId, setRecipientId] = useState('');
+  const [sendingProvider, setSendingProvider] = useState(null);
+  const [sendError, setSendError] = useState(null);
 
-    // Record transaction details silently to PostgreSQL in the background
-    try {
-      const token = localStorage.getItem('token') || localStorage.getItem('access_token');
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-      };
-
-      const origin = window.location.origin;
-      const baseUrl = origin.includes('localhost') && !origin.includes('8000')
-        ? 'http://localhost:8000'
-        : '';
-
-      let recipientId = null;
-
-      // Look up existing directory recipient profile
-      try {
-        const recRes = await fetch(`${baseUrl}/api/v1/recipients`, { headers });
-        if (recRes.ok) {
-          const recipients = await recRes.json();
-          if (recipients && recipients.length > 0) {
-            recipientId = recipients[0].id;
-          }
-        }
-      } catch (err) {
-        console.warn("Could not retrieve existing recipient contacts, fallback pending...", err);
-      }
-
-      // Automatically spin up a silent fallback recipient if one doesn't exist
-      if (!recipientId) {
-        try {
-          const createRes = await fetch(`${baseUrl}/api/v1/recipients`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              name: 'Default Ledger Recipient',
-              currency: form.target || 'INR',
-              payout_method: form.payoutMethod || 'Bank Deposit'
-            })
-          });
-          if (createRes.ok) {
-            const newRecipient = await createRes.json();
-            recipientId = newRecipient.id;
-          }
-        } catch (err) {
-          console.error("Auto-creation of default recipient directory contact failed:", err);
-        }
-      }
-
-      if (!recipientId) {
-        recipientId = 1;
-      }
-
-      // Audit writing safely in snake_case directly to database backend
-      await createTransfer({
-        recipient_id: Number(recipientId),
-        source_currency: form.source,  
-        target_currency: form.target,  
-        amount: Number(form.amount),                   
-        provider_name: route.provider_name,
-        exchange_rate: Number(route.exchange_rate),
-        fee: Number(route.fee || route.fixed_fee || 0),
-        total_delivery_amount: Number(route.total_delivery_amount),
-        ai_recommendation_at_time: result?.ai_recommendation || 'SEND'
-      });
-
-      console.log("Success: Transfer logged securely to database!");
-    } catch (error) {
-      console.error("Background auto-logging failed:", error);
-    }
-  };
+  useEffect(() => {
+    getRecipients()
+      .then((data) => {
+        setRecipients(data || []);
+        if (data?.length) setRecipientId(String(data[0].id));
+      })
+      .catch(() => setRecipients([]));
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setIsLoading(true);
-    setSelectedRoute(null);
+    setSendError(null);
     try {
       const data = await getCompare(form);
       setResult(data);
@@ -153,9 +98,50 @@ export default function CompareEngine() {
     }
   }
 
+  // Deliberately does NOT auto-create a "default" recipient or fall back
+  // to a guessed recipient ID if none is selected. For a financial ledger,
+  // silently attributing a transfer to the wrong (or a fabricated)
+  // recipient is worse than just asking the user to pick one first - see
+  // the inline message below when the recipient list is empty.
+  async function handleSend(route) {
+    setSendError(null);
+
+    // Open the provider's site synchronously, in the same tick as the
+    // click - if this waited on the transfer POST first, some browsers
+    // (Safari especially) would treat it as a non-user-initiated popup
+    // and block it.
+    const externalUrl = route.redirection_url || getProviderUrl(route.provider_name);
+    window.open(externalUrl, '_blank', 'noopener,noreferrer');
+
+    if (!recipientId) {
+      setSendError('Add a recipient to also log this transfer in your ledger.');
+      return;
+    }
+
+    setSendingProvider(route.provider_name);
+    try {
+      await createTransfer({
+        recipient_id: Number(recipientId),
+        source_currency: form.source,
+        target_currency: form.target,
+        amount: Number(form.amount),
+        provider_name: route.provider_name,
+        exchange_rate: Number(route.exchange_rate),
+        fee: Number(route.fixed_fee ?? route.fee ?? 0),
+        total_delivery_amount: Number(route.total_delivery_amount),
+        ai_recommendation_at_time: result?.ai_recommendation ?? null,
+      });
+      navigate('/ledger');
+    } catch (err) {
+      setSendError("Could not log this transfer to your backend - opened the provider's site anyway.");
+    } finally {
+      setSendingProvider(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <form onSubmit={handleSubmit} className="glass-panel p-5 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+      <form onSubmit={handleSubmit} className="glass-panel p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
         <div>
           <label className="text-xs font-mono uppercase text-slate-400">From</label>
           <select
@@ -163,9 +149,9 @@ export default function CompareEngine() {
             onChange={(e) => setForm({ ...form, source: e.target.value })}
             className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-sapphireNeon/60"
           >
-            {CURRENCIES.map((c) => (
-              <option key={c} value={c} className="bg-obsidian">
-                {c}
+            {ALL_CURRENCIES.map((c) => (
+              <option key={c.code} value={c.code} className="bg-obsidian">
+                {c.code} - {c.name}{c.live ? '' : ' (simulated rate)'}
               </option>
             ))}
           </select>
@@ -177,9 +163,9 @@ export default function CompareEngine() {
             onChange={(e) => setForm({ ...form, target: e.target.value })}
             className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-sapphireNeon/60"
           >
-            {TARGET_CURRENCIES.map((c) => (
-              <option key={c} value={c} className="bg-obsidian">
-                {c}
+            {ALL_CURRENCIES.map((c) => (
+              <option key={c.code} value={c.code} className="bg-obsidian">
+                {c.code} - {c.name}{c.live ? '' : ' (simulated rate)'}
               </option>
             ))}
           </select>
@@ -208,10 +194,33 @@ export default function CompareEngine() {
             ))}
           </select>
         </div>
+        <div>
+          <label className="text-xs font-mono uppercase text-slate-400">Recipient</label>
+          {recipients.length ? (
+            <select
+              value={recipientId}
+              onChange={(e) => setRecipientId(e.target.value)}
+              className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-sapphireNeon/60"
+            >
+              {recipients.map((r) => (
+                <option key={r.id} value={r.id} className="bg-obsidian">
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <Link
+              to="/recipients"
+              className="mt-1 flex items-center h-[42px] px-3 rounded-lg border border-amberNeon/30 text-xs text-amberNeon"
+            >
+              Add a recipient first
+            </Link>
+          )}
+        </div>
         <button
           type="submit"
           disabled={isLoading}
-          className="md:col-span-4 mt-2 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sapphireNeon to-emeraldNeon text-void font-display font-semibold py-2.5 disabled:opacity-60"
+          className="sm:col-span-2 lg:col-span-5 mt-2 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sapphireNeon to-emeraldNeon text-void font-display font-semibold py-2.5 disabled:opacity-60"
         >
           {isLoading && <Loader2 size={16} className="animate-spin" />}
           {isLoading ? 'Analyzing routes...' : 'Compare routes'}
@@ -226,41 +235,18 @@ export default function CompareEngine() {
             </p>
           )}
           <AIRecommendationBanner recommendation={result.ai_recommendation} summary={result.ai_analysis_summary} />
-          
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {result.routes?.map((route, i) => (
               <RouteCard
                 key={route.provider_name}
                 route={route}
                 isBest={i === 0}
-                isSelected={selectedRoute?.provider_name === route.provider_name}
-                onSelect={setSelectedRoute}
+                isSending={sendingProvider === route.provider_name}
+                onSend={handleSend}
               />
             ))}
           </div>
-
-          {/* DYNAMIC CALL TO ACTION PANEL */}
-          {selectedRoute && (
-            <motion.div 
-              initial={{ y: 10, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              className="glass-panel p-6 border border-emeraldNeon/20 flex flex-col md:flex-row items-center justify-between gap-4 mt-4"
-            >
-              <div>
-                <h4 className="font-display text-lg text-slate-100">Proceed with your transfer</h4>
-                <p className="text-sm text-slate-400">
-                  Click below to finalize sending via <span className="text-emeraldNeon font-semibold">{selectedRoute.provider_name}</span>. This audit will log automatically.
-                </p>
-              </div>
-              <button
-                onClick={() => handleSendRedirect(selectedRoute)}
-                className="w-full md:w-auto px-6 py-3 bg-gradient-to-r from-sapphireNeon to-emeraldNeon text-void font-display font-semibold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition shadow-[0_0_15px_rgba(16,185,129,0.2)]"
-              >
-                <span>Send with {selectedRoute.provider_name}</span>
-                <ArrowRight size={16} />
-              </button>
-            </motion.div>
-          )}
+          {sendError && <p className="text-xs font-mono text-amberNeon">{sendError}</p>}
         </motion.div>
       )}
     </div>
