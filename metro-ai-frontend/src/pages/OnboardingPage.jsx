@@ -2,24 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useCurrencyStore } from '../store/useCurrencyStore';
+import { updateCurrencyPreferences } from '../services/authService';
+import CurrencySelect from '../components/common/CurrencySelect';
 import GlowButton from '../components/common/GlowButton';
-
-const BASE_OPTIONS = ['CAD', 'USD', 'GBP', 'EUR', 'AUD'];
-const TARGET_OPTIONS = ['INR', 'PKR', 'PHP', 'MXN', 'NGN', 'CNY'];
-
-function Chip({ label, isActive, onClick, activeClass }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-4 py-2 rounded-xl border text-sm font-mono transition-all ${
-        isActive ? activeClass : 'border-white/10 text-slate-400 hover:border-white/20'
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
@@ -29,6 +14,8 @@ export default function OnboardingPage() {
 
   function handleContinue() {
     setPreferences(base, target);
+    // Best-effort sync to the backend - local state already applies either way.
+    updateCurrencyPreferences({ baseCurrency: base, targetCurrency: target }).catch(() => {});
     navigate('/dashboard');
   }
 
@@ -40,32 +27,20 @@ export default function OnboardingPage() {
         className="glass-panel w-full max-w-lg p-8"
       >
         <h1 className="font-display text-2xl text-slate-100 mb-1">Set up your corridor</h1>
-        <p className="text-sm text-slate-400 mb-6">This decides your dashboard's default rates and bulletin.</p>
+        <p className="text-sm text-slate-400 mb-6">
+          This decides your dashboard's default rates and bulletin. Pick any currency in the
+          world - the green dot means we have live rate data for it; the rest still work, just
+          with a clearly-marked simulated trend until a live feed covers them.
+        </p>
 
         <p className="text-xs font-mono uppercase text-slate-500 mb-2">Base currency</p>
-        <div className="flex flex-wrap gap-2 mb-6">
-          {BASE_OPTIONS.map((c) => (
-            <Chip
-              key={c}
-              label={c}
-              isActive={base === c}
-              onClick={() => setBase(c)}
-              activeClass="border-sapphireNeon/60 text-sapphireNeon bg-sapphireNeon/10 shadow-glow-sapphire"
-            />
-          ))}
+        <div className="mb-6">
+          <CurrencySelect value={base} onChange={setBase} accentClass="text-sapphireNeon" />
         </div>
 
         <p className="text-xs font-mono uppercase text-slate-500 mb-2">Sending to</p>
-        <div className="flex flex-wrap gap-2 mb-8">
-          {TARGET_OPTIONS.map((c) => (
-            <Chip
-              key={c}
-              label={c}
-              isActive={target === c}
-              onClick={() => setTarget(c)}
-              activeClass="border-emeraldNeon/60 text-emeraldNeon bg-emeraldNeon/10 shadow-glow-emerald"
-            />
-          ))}
+        <div className="mb-8">
+          <CurrencySelect value={target} onChange={setTarget} accentClass="text-emeraldNeon" />
         </div>
 
         <GlowButton onClick={handleContinue} className="w-full">
