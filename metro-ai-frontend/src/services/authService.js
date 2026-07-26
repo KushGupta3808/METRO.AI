@@ -25,3 +25,11 @@ export async function signup({ name, email, password }) {
     token: `demo-${btoa(email)}`,
   };
 }
+import apiClient from './apiClient';
+
+export function updateCurrencyPreferences({ baseCurrency, targetCurrency }) {
+  return apiClient.request('/auth/me', {
+    method: 'PATCH',
+    body: { base_currency: baseCurrency, target_currency: targetCurrency },
+  });
+}
