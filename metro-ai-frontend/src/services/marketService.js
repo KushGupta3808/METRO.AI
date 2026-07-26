@@ -155,18 +155,52 @@ const CENTRAL_BANKS = {
   GBP: { name: 'the Bank of England', url: 'https://www.bankofengland.co.uk' },
   EUR: { name: 'the European Central Bank', url: 'https://www.ecb.europa.eu' },
   AUD: { name: 'the Reserve Bank of Australia', url: 'https://www.rba.gov.au' },
+  JPY: { name: 'the Bank of Japan', url: 'https://www.boj.or.jp/en/' },
+  CHF: { name: 'the Swiss National Bank', url: 'https://www.snb.ch' },
+  INR: { name: 'the Reserve Bank of India', url: 'https://www.rbi.org.in' },
 };
 
 // Per-target-currency corridor context, so "Corridors" and "Payments"
 // reference the region the user is actually sending to, not a hardcoded
-// South Asia reference.
+// South Asia reference. This is plain country/region geography (not
+// institution names or URLs), so it's expanded much more generously than
+// CENTRAL_BANKS above - far lower risk of getting a specific fact wrong.
 const CORRIDOR_CONTEXT = {
   INR: { region: 'South Asia', label: 'India' },
   PKR: { region: 'South Asia', label: 'Pakistan' },
+  BDT: { region: 'South Asia', label: 'Bangladesh' },
+  LKR: { region: 'South Asia', label: 'Sri Lanka' },
+  NPR: { region: 'South Asia', label: 'Nepal' },
   PHP: { region: 'Southeast Asia', label: 'the Philippines' },
-  MXN: { region: 'Latin America', label: 'Mexico' },
-  NGN: { region: 'West Africa', label: 'Nigeria' },
+  VND: { region: 'Southeast Asia', label: 'Vietnam' },
+  IDR: { region: 'Southeast Asia', label: 'Indonesia' },
+  THB: { region: 'Southeast Asia', label: 'Thailand' },
+  MMK: { region: 'Southeast Asia', label: 'Myanmar' },
+  KHR: { region: 'Southeast Asia', label: 'Cambodia' },
   CNY: { region: 'East Asia', label: 'China' },
+  MXN: { region: 'Latin America', label: 'Mexico' },
+  COP: { region: 'Latin America', label: 'Colombia' },
+  GTQ: { region: 'Latin America', label: 'Guatemala' },
+  HNL: { region: 'Latin America', label: 'Honduras' },
+  BRL: { region: 'Latin America', label: 'Brazil' },
+  ARS: { region: 'Latin America', label: 'Argentina' },
+  PEN: { region: 'Latin America', label: 'Peru' },
+  DOP: { region: 'the Caribbean', label: 'the Dominican Republic' },
+  JMD: { region: 'the Caribbean', label: 'Jamaica' },
+  HTG: { region: 'the Caribbean', label: 'Haiti' },
+  NGN: { region: 'West Africa', label: 'Nigeria' },
+  GHS: { region: 'West Africa', label: 'Ghana' },
+  XOF: { region: 'West Africa', label: 'the West African CFA zone' },
+  KES: { region: 'East Africa', label: 'Kenya' },
+  UGX: { region: 'East Africa', label: 'Uganda' },
+  TZS: { region: 'East Africa', label: 'Tanzania' },
+  ETB: { region: 'East Africa', label: 'Ethiopia' },
+  RWF: { region: 'East Africa', label: 'Rwanda' },
+  EGP: { region: 'North Africa', label: 'Egypt' },
+  MAD: { region: 'North Africa', label: 'Morocco' },
+  ZAR: { region: 'Southern Africa', label: 'South Africa' },
+  TRY: { region: 'the Middle East and Eastern Europe', label: 'T\u00fcrkiye' },
+  UAH: { region: 'Eastern Europe', label: 'Ukraine' },
 };
 
 function possessive(name) {
