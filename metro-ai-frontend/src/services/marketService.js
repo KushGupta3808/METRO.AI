@@ -212,7 +212,13 @@ function fallbackCentralBank(base) {
 }
 
 function fallbackCorridor(target) {
-  return CORRIDOR_CONTEXT[target] || { region: 'this corridor', label: target };
+  // Previously fell back to the literal string 'this corridor' for any of
+  // the 120 currencies not in CORRIDOR_CONTEXT - meaning the "Corridors"
+  // news card read identically ("...volumes to this corridor grew...") no
+  // matter which of those currencies was picked. Interpolating the code
+  // itself means every currency choice produces genuinely distinct text,
+  // even without a hand-verified region for it.
+  return CORRIDOR_CONTEXT[target] || { region: `the ${target} corridor`, label: target };
 }
 
 export async function getNewsFeed(base, target) {
