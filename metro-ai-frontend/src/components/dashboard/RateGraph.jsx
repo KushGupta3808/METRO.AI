@@ -59,21 +59,47 @@ function RangeSelector({ selected, onSelect }) {
 
 export default function RateGraph() {
   const { baseCurrency, targetCurrency } = useCurrencyStore();
+  const base = baseCurrency || 'CAD';
+  const target = targetCurrency || 'INR';
+  const isSameCurrency = base === target;
+
   const [selectedRange, setSelectedRange] = useState('1M');
   const [data, setData] = useState([]);
   const [isLive, setIsLive] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // A currency's rate against itself is always exactly 1 - there's
+    // nothing meaningful to chart, and asking Frankfurter for it produces
+    // an unreliable response (in practice, an unhelpful 0 rather than a
+    // clean 1). Skip the fetch entirely rather than show a confusing
+    // graph built on a request that shouldn't have been made.
+    if (isSameCurrency) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
-    getRateSeries(baseCurrency || 'CAD', targetCurrency || 'INR', selectedRange).then((result) => {
+    getRateSeries(base, target, selectedRange).then((result) => {
       setData(result.series);
       setIsLive(result.isLive);
       setIsLoading(false);
     });
-  }, [baseCurrency, targetCurrency, selectedRange]);
+  }, [base, target, isSameCurrency, selectedRange]);
 
   const rangeLabel = RATE_RANGE_OPTIONS.find((r) => r.key === selectedRange)?.label ?? selectedRange;
+
+  if (isSameCurrency) {
+    return (
+      <div className="glass-panel p-5 md:p-6 text-center">
+        <p className="text-sm text-slate-300 mb-1">
+          Your base and target currency are both <span className="font-mono text-slate-100">{base}</span>.
+        </p>
+        <p className="text-xs text-slate-500">
+          Pick two different currencies in Onboarding to see a real exchange rate chart.
+        </p>
+      </div>
+    );
+  }
 
   if (isLoading || !data.length) return <RateGraphSkeleton />;
 
@@ -92,7 +118,7 @@ export default function RateGraph() {
       <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
         <div>
           <p className="text-xs font-mono uppercase tracking-wider text-slate-400">
-            {baseCurrency || 'CAD'} / {targetCurrency || 'INR'}
+            {base} / {target}
           </p>
           <p className="font-display text-3xl text-slate-100">{latest.toFixed(3)}</p>
         </div>
