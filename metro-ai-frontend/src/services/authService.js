@@ -3,7 +3,7 @@
 // real apiClient.request('/auth/login', { method: 'POST', body }) calls.
 // LoginPage/SignupPage already call these functions by this exact signature,
 // so nothing else in the app needs to change.
-
+//hi
 function simulateLatency(ms = 550) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
