@@ -1,9 +1,10 @@
 import { motion } from 'framer-motion';
 import { ExternalLink, ShieldAlert, AlertTriangle, Loader2 } from 'lucide-react';
 
-export default function RouteCard({ route, isBest, isSending, onSend }) {
+export default function RouteCard({ route, isBest, badges, isSending, onSend }) {
   const days = route.transfer_time_days;
   const timeLabel = days == null ? route.delivery_time : days <= 1 ? '1 day' : `${days} days`;
+  const allBadges = [...(isBest ? ['Best Value'] : []), ...(badges || [])];
 
   return (
     <motion.div
@@ -12,10 +13,21 @@ export default function RouteCard({ route, isBest, isSending, onSend }) {
         isBest ? 'border-sapphireNeon/40 shadow-glow-sapphire' : ''
       }`}
     >
-      {isBest && (
-        <span className="absolute -top-2.5 left-5 text-[10px] font-mono uppercase tracking-wider bg-sapphireNeon text-void px-2 py-0.5 rounded-full">
-          Best Value
-        </span>
+      {allBadges.length > 0 && (
+        <div className="absolute -top-2.5 left-5 flex gap-1.5 flex-wrap">
+          {allBadges.map((b) => (
+            <span
+              key={b}
+              className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                b === 'Best Value'
+                  ? 'bg-sapphireNeon text-void'
+                  : 'bg-emeraldNeon/90 text-void'
+              }`}
+            >
+              {b}
+            </span>
+          ))}
+        </div>
       )}
       <div className="flex items-center gap-3 mb-4">
         <div className="h-9 w-9 rounded-full bg-white/5 flex items-center justify-center font-display text-sm text-slate-200">
