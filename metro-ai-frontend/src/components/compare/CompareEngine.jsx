@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
@@ -19,6 +19,14 @@ const PAYOUT_METHODS = ['Bank Deposit', 'Cash Pickup', 'Mobile Wallet'];
 // transfer_time_days, etc.) so RouteCard never has to special-case mock
 // vs. real data. redirection_url is left null here on purpose - the send
 // handler below falls back to utils/providers.js for demo-mode sends.
+//
+// 8 real, verified providers spanning different niches - fast digital-
+// first (Wise, Remitly, WorldRemit, Xoom, Paysend), wide traditional
+// cash-pickup networks (Western Union, MoneyGram, Ria), and a large-
+// amount FX specialist (OFX). None of the speed/fee numbers below are
+// live quotes from these companies - they're illustrative, clearly
+// labeled as sample data by the "Showing sample routing" banner that
+// already appears whenever this fallback is in use.
 async function buildMockResponse({ source, target, amount }) {
   const { rate: baseRate, isLive } = await getLatestRate(source, target);
   const numericAmount = Number(amount) || 1000;
@@ -26,7 +34,11 @@ async function buildMockResponse({ source, target, amount }) {
     { name: 'Wise', margin: 0.003, fee: 2.99, days: 1 },
     { name: 'Remitly', margin: 0.009, fee: 0, days: 2 },
     { name: 'WorldRemit', margin: 0.008, fee: 3.99, days: 1 },
+    { name: 'Xoom', margin: 0.011, fee: 4.99, days: 1 },
+    { name: 'Paysend', margin: 0.006, fee: 1.99, days: 1 },
     { name: 'Western Union', margin: 0.015, fee: 4.99, days: 3 },
+    { name: 'MoneyGram', margin: 0.014, fee: 3.99, days: 2 },
+    { name: 'Ria Money Transfer', margin: 0.012, fee: 2.49, days: 2 },
   ];
 
   const routes = providers.map((p) => {
@@ -55,6 +67,36 @@ async function buildMockResponse({ source, target, amount }) {
   };
 }
 
+// Computes which route wins on each axis, so the differences are visible
+// at a glance instead of requiring the user to compare raw numbers across
+// every card themselves. Badges are derived purely from the numbers
+// already in each route - never an asserted claim about a real company
+// ("Wise is the fastest") that this app has no way to verify or keep
+// current.
+function computeBadges(routes) {
+  if (!routes?.length) return {};
+  const badges = {};
+
+  const fastest = routes.reduce((a, b) =>
+    (b.transfer_time_days ?? Infinity) < (a.transfer_time_days ?? Infinity) ? b : a
+  );
+  badges[fastest.provider_name] = [...(badges[fastest.provider_name] || []), 'Fastest'];
+
+  const noFee = routes.filter((r) => (r.fixed_fee ?? r.fee ?? null) === 0);
+  noFee.forEach((r) => {
+    badges[r.provider_name] = [...(badges[r.provider_name] || []), 'No fee'];
+  });
+
+  const cheapestFee = routes.reduce((a, b) =>
+    (b.fixed_fee ?? b.fee ?? Infinity) < (a.fixed_fee ?? a.fee ?? Infinity) ? b : a
+  );
+  if (!noFee.length) {
+    badges[cheapestFee.provider_name] = [...(badges[cheapestFee.provider_name] || []), 'Lowest fee'];
+  }
+
+  return badges;
+}
+
 export default function CompareEngine() {
   const navigate = useNavigate();
   const { baseCurrency, targetCurrency } = useCurrencyStore();
@@ -72,6 +114,8 @@ export default function CompareEngine() {
   const [recipientId, setRecipientId] = useState('');
   const [sendingProvider, setSendingProvider] = useState(null);
   const [sendError, setSendError] = useState(null);
+
+  const routeBadges = useMemo(() => computeBadges(result?.routes), [result]);
 
   useEffect(() => {
     getRecipients()
@@ -231,7 +275,9 @@ export default function CompareEngine() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
           {isDemoData && (
             <p className="text-xs font-mono text-slate-500">
-              Showing sample routing - connect the FastAPI backend for real provider offers.
+              Showing sample routing across 8 providers - connect the FastAPI backend for real,
+              live provider offers. The set and count of providers shown when connected depends
+              entirely on what your backend's /api/v1/compare endpoint returns.
             </p>
           )}
           <AIRecommendationBanner recommendation={result.ai_recommendation} summary={result.ai_analysis_summary} />
@@ -241,6 +287,7 @@ export default function CompareEngine() {
                 key={route.provider_name}
                 route={route}
                 isBest={i === 0}
+                badges={routeBadges[route.provider_name]}
                 isSending={sendingProvider === route.provider_name}
                 onSend={handleSend}
               />
