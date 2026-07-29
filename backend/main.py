@@ -560,11 +560,20 @@ async def compare_rates(
     # Fetch real live mid-market exchange rate dynamically
     mid_market = await fetch_live_market_rate(source, target)
     
-    # Accurate, real-world fee structures & routing details
+    # Accurate, real-world fee structures & routing details.
+    # 8 real providers spanning different niches: fast digital-first
+    # (Wise, Remitly, WorldRemit, Xoom, Paysend) and wide traditional
+    # cash-pickup networks (Western Union, MoneyGram, Ria). Margin
+    # percentages are illustrative - not live-scraped quotes from these
+    # companies - same as the original 4 already were.
     wise_rate = round(mid_market * 0.997, 4)
     remitly_rate = round(mid_market * 0.991, 4)
     worldremit_rate = round(mid_market * 0.992, 4)
+    xoom_rate = round(mid_market * 0.989, 4)
+    paysend_rate = round(mid_market * 0.994, 4)
     wu_rate = round(mid_market * 0.985, 4)
+    moneygram_rate = round(mid_market * 0.986, 4)
+    ria_rate = round(mid_market * 0.988, 4)
 
     routes = [
         {
@@ -607,6 +616,32 @@ async def compare_rates(
             "redirection_url": f"https://www.worldremit.com/send-money?source={source}&target={target}"
         },
         {
+            "provider_name": "Xoom",
+            "payout_method": payout_method,
+            "exchange_rate": xoom_rate,
+            "mid_market_rate": mid_market,
+            "margin_percentage": 1.1,
+            "fixed_fee": 4.99,
+            "transfer_time_days": 1,
+            "total_delivery_amount": round((amount - 4.99) * xoom_rate, 2),
+            "requires_kyc_verification": False,
+            "regulatory_warning": None,
+            "redirection_url": f"https://www.xoom.com/send-money?sourceCurrency={source}&targetCurrency={target}&sendAmount={amount}"
+        },
+        {
+            "provider_name": "Paysend",
+            "payout_method": payout_method,
+            "exchange_rate": paysend_rate,
+            "mid_market_rate": mid_market,
+            "margin_percentage": 0.6,
+            "fixed_fee": 1.99,
+            "transfer_time_days": 1,
+            "total_delivery_amount": round((amount - 1.99) * paysend_rate, 2),
+            "requires_kyc_verification": False,
+            "regulatory_warning": None,
+            "redirection_url": f"https://paysend.com/send?sourceCurrency={source}&targetCurrency={target}&amount={amount}"
+        },
+        {
             "provider_name": "Western Union",
             "payout_method": payout_method,
             "exchange_rate": wu_rate,
@@ -618,6 +653,32 @@ async def compare_rates(
             "requires_kyc_verification": False,
             "regulatory_warning": None,
             "redirection_url": f"https://www.westernunion.com/send-money?source={source}&target={target}"
+        },
+        {
+            "provider_name": "MoneyGram",
+            "payout_method": payout_method,
+            "exchange_rate": moneygram_rate,
+            "mid_market_rate": mid_market,
+            "margin_percentage": 1.4,
+            "fixed_fee": 3.99,
+            "transfer_time_days": 2,
+            "total_delivery_amount": round((amount - 3.99) * moneygram_rate, 2),
+            "requires_kyc_verification": False,
+            "regulatory_warning": None,
+            "redirection_url": f"https://www.moneygram.com/en/send-money?sourceCurrency={source}&targetCurrency={target}&amount={amount}"
+        },
+        {
+            "provider_name": "Ria Money Transfer",
+            "payout_method": payout_method,
+            "exchange_rate": ria_rate,
+            "mid_market_rate": mid_market,
+            "margin_percentage": 1.2,
+            "fixed_fee": 2.49,
+            "transfer_time_days": 2,
+            "total_delivery_amount": round((amount - 2.49) * ria_rate, 2),
+            "requires_kyc_verification": False,
+            "regulatory_warning": None,
+            "redirection_url": f"https://www.riamoneytransfer.com/en-us/send-money?sourceCurrency={source}&targetCurrency={target}&amount={amount}"
         }
     ]
 
