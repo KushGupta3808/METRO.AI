@@ -6,6 +6,12 @@ const PROVIDER_LINKS = {
   remitly: 'https://www.remitly.com/',
   xoom: 'https://www.xoom.com/',
   worldremit: 'https://www.worldremit.com/',
+  westernunion: 'https://www.westernunion.com/',
+  moneygram: 'https://www.moneygram.com/',
+  'riamoneytransfer': 'https://www.riamoneytransfer.com/',
+  ria: 'https://www.riamoneytransfer.com/',
+  ofx: 'https://www.ofx.com/',
+  paysend: 'https://paysend.com/',
 };
 
 export function getProviderUrl(providerName) {
