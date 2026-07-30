@@ -9,10 +9,18 @@ from fastapi.responses import StreamingResponse
 from google.genai import types
 
 
-from fastapi import FastAPI, HTTPException, Depends, Query, status, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, Query, Request, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field
+
+# Rate limiting - login/signup are the two endpoints most worth protecting
+# from brute-force/credential-stuffing attempts and mass account creation.
+# In-memory backend is the right call at this scale; move to a Redis
+# storage_uri only if this ever runs across multiple worker processes.
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Secure Async Communication
 import httpx
@@ -36,13 +44,30 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./metro_ai.db
 ENV = os.environ.get("METRO_AI_ENV", "development")
 SECRET_KEY = os.environ.get("METRO_AI_JWT_SECRET")
 
+# Refusing to boot only when METRO_AI_ENV="production" is set has a real
+# gap: it's a custom env var name no hosting platform sets automatically,
+# so it's easy to forget on a real deploy. As a second, independent
+# tripwire, also refuse the insecure fallback the moment DATABASE_URL
+# points anywhere other than the default local SQLite file - a real
+# Postgres connection string is a strong signal this isn't just a laptop
+# running `npm run dev` anymore, even if METRO_AI_ENV was never set.
+_looks_like_real_deployment = (
+    ENV == "production"
+    or DATABASE_URL != "sqlite+aiosqlite:///./metro_ai.db"
+)
+
 if not SECRET_KEY:
-    if ENV == "production":
+    if _looks_like_real_deployment:
         import sys
         print("CRITICAL SECURITY ERROR: METRO_AI_JWT_SECRET environment variable is missing. Halting system.")
         sys.exit(1)
     else:
         SECRET_KEY = "metro-ai-temporary-insecure-development-jwt-key-change-in-prod"
+        print("=" * 70)
+        print("WARNING: Running with a hardcoded, publicly-known JWT secret.")
+        print("This is fine for local development only. Set METRO_AI_JWT_SECRET")
+        print("before deploying anywhere reachable outside your own machine.")
+        print("=" * 70)
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 Days
@@ -70,13 +95,30 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# CORS: allow_origins=["*"] combined with allow_credentials=True is a real
+# misconfiguration - browsers are increasingly strict about that exact
+# combination, and it means literally any site can call this API with the
+# user's credentials attached. Defaults cover local Vite dev; for a real
+# deploy, set METRO_AI_ALLOWED_ORIGINS to a comma-separated list of your
+# actual frontend domain(s), e.g. "https://app.metroai.com,https://metroai.com"
+_default_dev_origins = "http://localhost:5173,http://127.0.0.1:5173"
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("METRO_AI_ALLOWED_ORIGINS", _default_dev_origins).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Hardened in production configs as specified in audit docs
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 async def get_db():
     async with async_session_maker() as session:
@@ -392,7 +434,8 @@ async def secure_chat_stream(req: ChatStreamRequest):
     return StreamingResponse(event_generator(), media_type="text/plain")
 
 @app.post("/api/v1/auth/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def signup(user: UserCreate, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/hour")
+async def signup(request: Request, user: UserCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == user.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -410,7 +453,8 @@ async def signup(user: UserCreate, db: AsyncSession = Depends(get_db)):
     return new_user
 
 @app.post("/api/v1/auth/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalar_one_or_none()
     
