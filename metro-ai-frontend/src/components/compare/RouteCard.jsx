@@ -1,6 +1,33 @@
 import { motion } from 'framer-motion';
 import { ExternalLink, ShieldAlert, AlertTriangle, Loader2 } from 'lucide-react';
 
+// Wise, WorldRemit, and Western Union all start with "W" - a bare
+// first-letter avatar made three of the eight providers visually
+// identical at a glance, which undercuts the whole point of a "crystal
+// clear" comparison. Deriving a color from the FULL name (not just the
+// first letter) means same-letter providers still look distinct, without
+// needing real logo assets for every provider.
+const AVATAR_COLORS = [
+  'bg-emeraldNeon/15 text-emeraldNeon',
+  'bg-sapphireNeon/15 text-sapphireNeon',
+  'bg-amberNeon/15 text-amberNeon',
+  'bg-purple-400/15 text-purple-300',
+  'bg-pink-400/15 text-pink-300',
+  'bg-cyan-400/15 text-cyan-300',
+];
+
+function avatarColorFor(name) {
+  // A simple char-code sum collides too easily (WorldRemit and Western
+  // Union landed on the same color in testing, which was the exact
+  // problem this is meant to fix). djb2-style hashing distributes far
+  // better across a small provider list like this one.
+  let hash = 5381;
+  for (let i = 0; i < (name || '').length; i++) {
+    hash = ((hash << 5) + hash + name.charCodeAt(i)) | 0;
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
 export default function RouteCard({ route, isBest, badges, isSending, onSend }) {
   const days = route.transfer_time_days;
   const timeLabel = days == null ? route.delivery_time : days <= 1 ? '1 day' : `${days} days`;
@@ -30,7 +57,7 @@ export default function RouteCard({ route, isBest, badges, isSending, onSend }) 
         </div>
       )}
       <div className="flex items-center gap-3 mb-4">
-        <div className="h-9 w-9 rounded-full bg-white/5 flex items-center justify-center font-display text-sm text-slate-200">
+        <div className={`h-9 w-9 rounded-full flex items-center justify-center font-display text-sm ${avatarColorFor(route.provider_name)}`}>
           {route.provider_name?.[0] ?? '?'}
         </div>
         <p className="font-display text-slate-100">{route.provider_name}</p>
