@@ -11,6 +11,9 @@ import LedgerPage from '../pages/LedgerPage';
 import RecipientsPage from '../pages/RecipientsPage';
 import FAQPage from '../pages/FAQPage';
 import AboutPage from '../pages/AboutPage';
+import TermsPage from '../pages/TermsPage';
+import PrivacyPage from '../pages/PrivacyPage';
+
 
 function RequireAuth({ children }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -52,6 +55,8 @@ export default function AppRouter() {
         <Route path="/ledger" element={<LedgerPage />} />
         <Route path="/recipients" element={<RecipientsPage />} />
         <Route path="/faq" element={<FAQPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
       </Route>
       <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />
     </Routes>
