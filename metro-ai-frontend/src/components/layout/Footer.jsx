@@ -4,7 +4,7 @@ const columns = [
   {
     title: 'Product',
     links: [
-      { label: 'Dashboard', to: '#' },
+      { label: 'Dashboard', to: '/dashboard' },
       { label: 'Compare', to: '/compare' },
       { label: 'Ledger', to: '/ledger' },
       { label: 'Recipients', to: '/recipients' },
