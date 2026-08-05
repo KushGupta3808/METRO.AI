@@ -31,6 +31,8 @@ export default function AppRouter() {
   return (
     <Routes>
       <Route path="/about" element={<AboutPage />} />
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
       <Route path="/signup" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <SignupPage />} />
       <Route
@@ -55,8 +57,6 @@ export default function AppRouter() {
         <Route path="/ledger" element={<LedgerPage />} />
         <Route path="/recipients" element={<RecipientsPage />} />
         <Route path="/faq" element={<FAQPage />} />
-        <Route path="/terms" element={<TermsPage />} />
-        <Route path="/privacy" element={<PrivacyPage />} />
       </Route>
       <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />
     </Routes>
