@@ -1,10 +1,8 @@
 import { lazy, Suspense } from 'react';
 import NewsFeed from '../components/dashboard/NewsFeed';
 import RateGraph from '../components/dashboard/RateGraph';
-import { useAuthStore } from '../store/useAuthStore';
 import RateAlerts from '../components/dashboard/RateAlerts';
-// ...somewhere in the JSX:
-<RateAlerts />
+import { useAuthStore } from '../store/useAuthStore';
 
 // Lazy-loaded: this is a purely decorative background (opacity-60,
 // pointer-events-none) built on React Three Fiber, which pulls in the
@@ -32,8 +30,13 @@ export default function DashboardPage() {
         <p className="text-sm text-slate-400">Here's how your corridor is moving today.</p>
       </div>
 
-      <div className="mb-8">
-        <RateGraph />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <div className="lg:col-span-2">
+          <RateGraph />
+        </div>
+        <div>
+          <RateAlerts />
+        </div>
       </div>
 
       <NewsFeed />
