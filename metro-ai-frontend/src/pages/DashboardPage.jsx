@@ -2,6 +2,9 @@ import { lazy, Suspense } from 'react';
 import NewsFeed from '../components/dashboard/NewsFeed';
 import RateGraph from '../components/dashboard/RateGraph';
 import { useAuthStore } from '../store/useAuthStore';
+import RateAlerts from '../components/dashboard/RateAlerts';
+// ...somewhere in the JSX:
+<RateAlerts />
 
 // Lazy-loaded: this is a purely decorative background (opacity-60,
 // pointer-events-none) built on React Three Fiber, which pulls in the
